@@ -112,7 +112,7 @@ if (typeof document === 'undefined') {
   // CONTENT SCRIPT CODE
   // ================================
   (function() {
-    let customQuickFindInput = null; // Global reference for re-triggering filtering
+    let customQuickFindInput = null;
 
     // Utility: Wait for an element matching a selector.
     function waitForElement(selector, callback) {
@@ -160,18 +160,6 @@ if (typeof document === 'undefined') {
       return match && match[1] ? decodeURIComponent(match[1]) : null;
     }
 
-    // Add a new header cell labeled "Picklist Values" if not already present.
-    function addPicklistHeaderColumn() {
-      const headerRow = document.querySelector("table thead tr");
-      if (headerRow && !headerRow.querySelector("th.picklistColumnHeader")) {
-        const th = document.createElement("th");
-        th.className = "picklistColumnHeader";
-        th.innerText = "Picklist Values";
-        headerRow.appendChild(th);
-        console.log("Added Picklist Values header column.");
-      }
-    }
-
     // Replace the original Quick Find input and attach a custom event listener.
     function setupCustomQuickFind(originalInput) {
       const newInput = originalInput.cloneNode(true);
@@ -184,7 +172,7 @@ if (typeof document === 'undefined') {
     }
 
     // Filter table rows based on the search term.
-    // For picklist fields, combine the field label and the visible picklist column.
+    // It now uses a row's dataset.picklistText (populated in the background) for search.
     function onQuickFindInput(e) {
       const searchValue = e.target.value.trim().toLowerCase();
       const tableBody = document.querySelector("table tbody");
@@ -199,8 +187,7 @@ if (typeof document === 'undefined') {
         const fieldLabel = cells[0].innerText.toLowerCase();
         const apiName = cells[1].innerText.toLowerCase();
         const fieldType = cells[2].innerText.toLowerCase();
-        const picklistCell = row.querySelector("td.picklistColumn");
-        const picklistText = picklistCell ? picklistCell.innerText.toLowerCase() : "";
+        const picklistText = row.dataset.picklistText ? row.dataset.picklistText.toLowerCase() : "";
         const combinedSearchText = fieldLabel + " " + picklistText;
         if (
           searchValue === "" ||
@@ -216,7 +203,7 @@ if (typeof document === 'undefined') {
     }
 
     // Send a message to the background script to fetch picklist values.
-    // The isStandard flag is true if the field's API name does not end with "__c".
+    // Instead of adding a visible cell, we store the text in a data attribute on the row.
     function fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStandard) {
       const origin = window.location.origin;
       chrome.runtime.sendMessage(
@@ -231,15 +218,8 @@ if (typeof document === 'undefined') {
           if (response && response.success) {
             const data = response.data;
             const picklistText = data.picklistText || "";
-            // Add or update a visible cell with class "picklistColumn" in the row.
-            let picklistCell = row.querySelector("td.picklistColumn");
-            if (!picklistCell) {
-              picklistCell = document.createElement("td");
-              picklistCell.className = "picklistColumn";
-              picklistCell.style.whiteSpace = "nowrap";
-              row.appendChild(picklistCell);
-            }
-            picklistCell.innerText = picklistText;
+            // Save picklist text in the row's dataset (for search filtering)
+            row.dataset.picklistText = picklistText;
             console.log(`Fetched picklist values for ${fieldApiName}: ${picklistText}`);
             // Re-run filtering with the current Quick Find input value.
             if (customQuickFindInput) {
@@ -271,41 +251,50 @@ if (typeof document === 'undefined') {
         if (fieldType.includes("picklist")) {
           fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStandard);
         } else {
-          // For non-picklist rows, add an empty cell for consistency.
-          let picklistCell = row.querySelector("td.picklistColumn");
-          if (!picklistCell) {
-            picklistCell = document.createElement("td");
-            picklistCell.className = "picklistColumn";
-            picklistCell.innerText = "";
-            row.appendChild(picklistCell);
-          }
+          // For non-picklist rows, clear any previously stored picklist text.
+          row.dataset.picklistText = "";
         }
       });
     }
 
-    // Initialization: Wait for the Quick Find input and table to load, add header,
-    // scroll the proper container to trigger lazy loading, then wait for rows to stabilize.
-    waitForElement('input#globalQuickfind', globalQuickfind => {
-      console.log("Global Quick Find input found.");
-      waitForElement("table", table => {
-        addPicklistHeaderColumn();
-        waitForElement("table tbody", () => {
-          // Scroll the container with the specified classes to trigger lazy loading.
-          const container = document.querySelector(
-            '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
-          );
-          if (container) {
-            container.scrollTop = container.scrollHeight;
-            console.log("Auto-scrolled container to bottom for lazy load.");
-          }
-          // Wait until the table rows stabilize (i.e. lazy loading is complete)
-          waitForAllRows(() => {
-            setupCustomQuickFind(globalQuickfind);
-            processPicklistRows();
-            console.log("Custom Quick Find and picklist fetch setup complete.");
+    // Encapsulated initialization function.
+    function initPicklistProcessing() {
+      waitForElement('input#globalQuickfind', globalQuickfind => {
+        console.log("Global Quick Find input found.");
+        waitForElement("table", table => {
+          // No header column is added now since we don't want picklist values visible.
+          waitForElement("table tbody", () => {
+            // Scroll the container to trigger lazy loading.
+            const container = document.querySelector(
+              '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
+            );
+            if (container) {
+              container.scrollTop = container.scrollHeight;
+              console.log("Auto-scrolled container to bottom for lazy load.");
+            }
+            // Wait for lazy load to complete.
+            waitForAllRows(() => {
+              setupCustomQuickFind(globalQuickfind);
+              processPicklistRows();
+              console.log("Custom Quick Find and picklist fetch setup complete.");
+            });
           });
         });
       });
-    });
+    }
+
+    // Initial setup.
+    initPicklistProcessing();
+
+    // Poll for changes in the object name (e.g. when navigating to a different object/tab).
+    let lastObjectName = getObjectNameFromURL();
+    setInterval(() => {
+      const newObjectName = getObjectNameFromURL();
+      if (newObjectName !== lastObjectName) {
+        console.log("Detected object change – reinitializing picklist processing.");
+        lastObjectName = newObjectName;
+        initPicklistProcessing();
+      }
+    }, 2000);
   })();
 }
