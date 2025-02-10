@@ -50,7 +50,6 @@ if (typeof document === 'undefined') {
               return response.json();
             })
             .then(data => {
-              // Find the field by its name.
               const field = data.fields.find(f => f.name === fieldApiName);
               if (field && field.picklistValues && field.picklistValues.length > 0) {
                 const picklistText = field.picklistValues
@@ -66,7 +65,6 @@ if (typeof document === 'undefined') {
               sendResponse({ success: false, error: err.toString() });
             });
         } else {
-          // For custom fields, query the CustomField object via the Tooling API.
           const query = `SELECT Metadata FROM CustomField WHERE DeveloperName = '${fieldApiName}' AND TableEnumOrId = '${objectName}'`;
           const url = `${apiOrigin}/services/data/v56.0/tooling/query/?q=${encodeURIComponent(query)}`;
           fetch(url, {
@@ -103,7 +101,6 @@ if (typeof document === 'undefined') {
             });
         }
       });
-      // Return true to indicate asynchronous response.
       return true;
     }
   });
@@ -114,7 +111,6 @@ if (typeof document === 'undefined') {
   (function() {
     let customQuickFindInput = null;
 
-    // Utility: Wait for an element matching a selector.
     function waitForElement(selector, callback) {
       const element = document.querySelector(selector);
       if (element) {
@@ -124,7 +120,6 @@ if (typeof document === 'undefined') {
       }
     }
 
-    // Utility: Wait until the table rows stabilize (i.e. lazy loading is complete)
     function waitForAllRows(callback) {
       const tableBody = document.querySelector("table tbody");
       if (!tableBody) {
@@ -137,7 +132,6 @@ if (typeof document === 'undefined') {
         const currentCount = tableBody.querySelectorAll("tr").length;
         if (currentCount === lastCount) {
           stableCounter++;
-          // After 3 consecutive checks (~1.5 seconds) with no change, assume loading is complete.
           if (stableCounter >= 3) {
             clearInterval(interval);
             callback();
@@ -147,32 +141,37 @@ if (typeof document === 'undefined') {
           stableCounter = 0;
         }
       }, 500);
-      // Safety timeout: if not stable after 5 seconds, proceed anyway.
       setTimeout(() => {
         clearInterval(interval);
         callback();
       }, 5000);
     }
 
-    // Utility: Extract the object name from the URL.
     function getObjectNameFromURL() {
       const match = window.location.pathname.match(/ObjectManager\/([^\/]+)/);
       return match && match[1] ? decodeURIComponent(match[1]) : null;
     }
 
-    // Replace the original Quick Find input and attach a custom event listener.
+    // Modified setupCustomQuickFind prevents double-replacement.
     function setupCustomQuickFind(originalInput) {
+      if (originalInput.dataset.customized === "true") {
+        console.log("Custom Quick Find input already set up.");
+        return;
+      }
       const newInput = originalInput.cloneNode(true);
       newInput.id = "globalQuickfind";
-      originalInput.parentNode.replaceChild(newInput, originalInput);
-      console.log("Replaced original Quick Find input with a clone.");
+      newInput.dataset.customized = "true";
+      if (originalInput.parentNode) {
+        originalInput.parentNode.replaceChild(newInput, originalInput);
+        console.log("Replaced original Quick Find input with a clone.");
+      } else {
+        console.warn("Original Quick Find input has no parent; skipping replacement.");
+      }
       customQuickFindInput = newInput;
       newInput.addEventListener("input", onQuickFindInput);
       console.log("Custom Quick Find event listener attached.");
     }
 
-    // Filter table rows based on the search term.
-    // It now uses a row's dataset.picklistText (populated in the background) for search.
     function onQuickFindInput(e) {
       const searchValue = e.target.value.trim().toLowerCase();
       const tableBody = document.querySelector("table tbody");
@@ -202,8 +201,6 @@ if (typeof document === 'undefined') {
       });
     }
 
-    // Send a message to the background script to fetch picklist values.
-    // Instead of adding a visible cell, we store the text in a data attribute on the row.
     function fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStandard) {
       const origin = window.location.origin;
       chrome.runtime.sendMessage(
@@ -218,10 +215,12 @@ if (typeof document === 'undefined') {
           if (response && response.success) {
             const data = response.data;
             const picklistText = data.picklistText || "";
-            // Save picklist text in the row's dataset (for search filtering)
             row.dataset.picklistText = picklistText;
+            const labelCell = row.querySelector("td");
+            if (labelCell) {
+              labelCell.setAttribute("title", picklistText);
+            }
             console.log(`Fetched picklist values for ${fieldApiName}: ${picklistText}`);
-            // Re-run filtering with the current Quick Find input value.
             if (customQuickFindInput) {
               onQuickFindInput({ target: { value: customQuickFindInput.value } });
             }
@@ -232,7 +231,6 @@ if (typeof document === 'undefined') {
       );
     }
 
-    // Iterate over table rows; for picklist fields, trigger the fetch.
     function processPicklistRows() {
       const tableBody = document.querySelector("table tbody");
       if (!tableBody) return;
@@ -251,20 +249,20 @@ if (typeof document === 'undefined') {
         if (fieldType.includes("picklist")) {
           fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStandard);
         } else {
-          // For non-picklist rows, clear any previously stored picklist text.
           row.dataset.picklistText = "";
+          const labelCell = row.querySelector("td");
+          if (labelCell) {
+            labelCell.removeAttribute("title");
+          }
         }
       });
     }
 
-    // Encapsulated initialization function.
     function initPicklistProcessing() {
       waitForElement('input#globalQuickfind', globalQuickfind => {
         console.log("Global Quick Find input found.");
         waitForElement("table", table => {
-          // No header column is added now since we don't want picklist values visible.
           waitForElement("table tbody", () => {
-            // Scroll the container to trigger lazy loading.
             const container = document.querySelector(
               '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
             );
@@ -272,7 +270,6 @@ if (typeof document === 'undefined') {
               container.scrollTop = container.scrollHeight;
               console.log("Auto-scrolled container to bottom for lazy load.");
             }
-            // Wait for lazy load to complete.
             waitForAllRows(() => {
               setupCustomQuickFind(globalQuickfind);
               processPicklistRows();
@@ -283,10 +280,8 @@ if (typeof document === 'undefined') {
       });
     }
 
-    // Initial setup.
     initPicklistProcessing();
 
-    // Poll for changes in the object name (e.g. when navigating to a different object/tab).
     let lastObjectName = getObjectNameFromURL();
     setInterval(() => {
       const newObjectName = getObjectNameFromURL();
