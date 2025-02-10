@@ -120,6 +120,7 @@ if (typeof document === 'undefined') {
       }
     }
 
+    // Wait until rows in the table remain stable.
     function waitForAllRows(callback) {
       const tableBody = document.querySelector("table tbody");
       if (!tableBody) {
@@ -241,6 +242,9 @@ if (typeof document === 'undefined') {
       }
       const rows = tableBody.querySelectorAll("tr");
       rows.forEach(row => {
+        // Skip rows already processed
+        if (row.dataset.picklistFetched === "true") return;
+
         const cells = row.querySelectorAll("td");
         if (cells.length < 3) return;
         const fieldType = cells[2].innerText.toLowerCase();
@@ -255,33 +259,64 @@ if (typeof document === 'undefined') {
             labelCell.removeAttribute("title");
           }
         }
+        // Mark as processed
+        row.dataset.picklistFetched = "true";
       });
+    }
+
+    // Recursive auto-scroll: scroll until the container's scrollHeight stops increasing.
+    function autoScrollAndWait(container, callback) {
+      let lastHeight = container.scrollHeight;
+      function scrollStep() {
+        container.scrollTop = container.scrollHeight;
+        setTimeout(() => {
+          const newHeight = container.scrollHeight;
+          if (newHeight > lastHeight) {
+            lastHeight = newHeight;
+            scrollStep();
+          } else {
+            callback();
+          }
+        }, 500);
+      }
+      scrollStep();
     }
 
     function initPicklistProcessing() {
       waitForElement('input#globalQuickfind', globalQuickfind => {
         console.log("Global Quick Find input found.");
-        waitForElement("table", table => {
-          waitForElement("table tbody", () => {
-            const container = document.querySelector(
-              '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
-            );
-            if (container) {
-              container.scrollTop = container.scrollHeight;
-              console.log("Auto-scrolled container to bottom for lazy load.");
-            }
-            waitForAllRows(() => {
+        waitForElement("table tbody", tableBody => {
+          const container = document.querySelector(
+            '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
+          );
+          if (container) {
+            autoScrollAndWait(container, () => {
+              console.log("Finished auto scrolling.");
               setupCustomQuickFind(globalQuickfind);
               processPicklistRows();
+              // Observe new rows added after auto-scroll completes.
+              const observer = new MutationObserver(mutations => {
+                mutations.forEach(mutation => {
+                  if (mutation.addedNodes.length) {
+                    processPicklistRows();
+                  }
+                });
+              });
+              observer.observe(tableBody, { childList: true });
               console.log("Custom Quick Find and picklist fetch setup complete.");
             });
-          });
+          } else {
+            setupCustomQuickFind(globalQuickfind);
+            processPicklistRows();
+            console.log("Custom Quick Find and picklist fetch setup complete.");
+          }
         });
       });
     }
 
     initPicklistProcessing();
 
+    // Reinitialize if the object changes.
     let lastObjectName = getObjectNameFromURL();
     setInterval(() => {
       const newObjectName = getObjectNameFromURL();
