@@ -124,6 +124,36 @@ if (typeof document === 'undefined') {
       }
     }
 
+    // Utility: Wait until the table rows stabilize (i.e. lazy loading is complete)
+    function waitForAllRows(callback) {
+      const tableBody = document.querySelector("table tbody");
+      if (!tableBody) {
+        callback();
+        return;
+      }
+      let lastCount = tableBody.querySelectorAll("tr").length;
+      let stableCounter = 0;
+      const interval = setInterval(() => {
+        const currentCount = tableBody.querySelectorAll("tr").length;
+        if (currentCount === lastCount) {
+          stableCounter++;
+          // After 3 consecutive checks (~1.5 seconds) with no change, assume loading is complete.
+          if (stableCounter >= 3) {
+            clearInterval(interval);
+            callback();
+          }
+        } else {
+          lastCount = currentCount;
+          stableCounter = 0;
+        }
+      }, 500);
+      // Safety timeout: if not stable after 5 seconds, proceed anyway.
+      setTimeout(() => {
+        clearInterval(interval);
+        callback();
+      }, 5000);
+    }
+
     // Utility: Extract the object name from the URL.
     function getObjectNameFromURL() {
       const match = window.location.pathname.match(/ObjectManager\/([^\/]+)/);
@@ -154,7 +184,7 @@ if (typeof document === 'undefined') {
     }
 
     // Filter table rows based on the search term.
-    // For picklist fields, combine the field label and the new visible picklist column.
+    // For picklist fields, combine the field label and the visible picklist column.
     function onQuickFindInput(e) {
       const searchValue = e.target.value.trim().toLowerCase();
       const tableBody = document.querySelector("table tbody");
@@ -253,16 +283,27 @@ if (typeof document === 'undefined') {
       });
     }
 
-    // Initialization: Wait for the Quick Find input and table to load, add header, then set up.
+    // Initialization: Wait for the Quick Find input and table to load, add header,
+    // scroll the proper container to trigger lazy loading, then wait for rows to stabilize.
     waitForElement('input#globalQuickfind', globalQuickfind => {
       console.log("Global Quick Find input found.");
       waitForElement("table", table => {
         addPicklistHeaderColumn();
         waitForElement("table tbody", () => {
-          console.log("Data table found.");
-          setupCustomQuickFind(globalQuickfind);
-          processPicklistRows();
-          console.log("Custom Quick Find and picklist fetch setup complete.");
+          // Scroll the container with the specified classes to trigger lazy loading.
+          const container = document.querySelector(
+            '.scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native'
+          );
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+            console.log("Auto-scrolled container to bottom for lazy load.");
+          }
+          // Wait until the table rows stabilize (i.e. lazy loading is complete)
+          waitForAllRows(() => {
+            setupCustomQuickFind(globalQuickfind);
+            processPicklistRows();
+            console.log("Custom Quick Find and picklist fetch setup complete.");
+          });
         });
       });
     });
