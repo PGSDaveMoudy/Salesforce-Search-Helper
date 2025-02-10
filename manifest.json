@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Enhanced Global Quick Find (Visible Picklist Column)",
+  "version": "1.0",
+  "description": "Replaces Quick Find and fetches picklist values using the logged‑in session. Standard fields use a describe call while custom fields are queried. The fetched picklist values are added as a visible column so search works on them.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://*.salesforce.com/*",
+    "https://*.lightning.force.com/*",
+    "https://*.my.salesforce.com/*"
+  ],
+  "background": {
+    "service_worker": "script.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.lightning.force.com/lightning/setup/ObjectManager/*"
+      ],
+      "js": ["script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
