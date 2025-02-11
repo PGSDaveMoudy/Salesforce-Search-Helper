@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Salesforce Field Search Helper",
+  "version": "1.0",
+  "description": "Replaces Quick Find and fetches picklist values using the logged‑in session.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://*.salesforce.com/*",
+    "https://*.lightning.force.com/*",
+    "https://*.my.salesforce.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.lightning.force.com/lightning/setup/*"
+      ],
+      "exclude_matches": [
+        "https://*.lightning.force.com/lightning/setup/ObjectManager/home*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
