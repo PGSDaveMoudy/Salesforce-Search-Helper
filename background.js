@@ -1,9 +1,11 @@
 // Helper: Return a promise that resolves with the session cookie value (“sid”)
 async function getSessionCookie(origin) {
   try {
-    let cookieUrl = origin.includes("lightning.force.com")
-      ? origin.replace("lightning.force.com", "my.salesforce.com")
-      : origin;
+    let cookieUrl = origin;
+    if (/lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com/.test(origin)) {
+      // Replace the domain with my.salesforce.com for cookie retrieval.
+      cookieUrl = origin.replace(/(lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com)/, "my.salesforce.com");
+    }
     return new Promise((resolve) => {
       chrome.cookies.get({ url: cookieUrl, name: "sid" }, (cookie) => {
         resolve(cookie?.value || null);
@@ -22,9 +24,10 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
     return { success: false, error: "No session cookie found." };
   }
 
-  let apiOrigin = origin.includes("lightning.force.com")
-    ? origin.replace("lightning.force.com", "my.salesforce.com")
-    : origin;
+  let apiOrigin = origin;
+  if (/lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com/.test(origin)) {
+    apiOrigin = origin.replace(/(lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com)/, "my.salesforce.com");
+  }
 
   try {
     if (isStandard) {
