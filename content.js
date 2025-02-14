@@ -132,7 +132,7 @@ window.addEventListener("popstate", () => {
       return;
     }
 
-    // Create and insert Export CSV button with nicer styling
+    // Create and insert Export CSV button with styling
     if (!document.getElementById("exportCsvButton")) {
       const exportButton = document.createElement("button");
       exportButton.id = "exportCsvButton";
