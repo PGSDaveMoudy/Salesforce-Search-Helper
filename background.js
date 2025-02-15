@@ -1,10 +1,12 @@
 // Helper: Return a promise that resolves with the session cookie value (“sid”)
 async function getSessionCookie(origin) {
   try {
+    // Normalize the domain so that both production and sandbox resolve to my.salesforce.com.
+    // Example: "https://cs1.sandbox.lightning.force.com" becomes "https://cs1.my.salesforce.com"
     let cookieUrl = origin;
-    if (/lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com/.test(origin)) {
-      // Replace the domain with my.salesforce.com for cookie retrieval.
-      cookieUrl = origin.replace(/(lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com)/, "my.salesforce.com");
+    const match = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
+    if (match) {
+      cookieUrl = match[1] + ".my.salesforce.com";
     }
     return new Promise((resolve) => {
       chrome.cookies.get({ url: cookieUrl, name: "sid" }, (cookie) => {
@@ -25,8 +27,9 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
   }
 
   let apiOrigin = origin;
-  if (/lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com/.test(origin)) {
-    apiOrigin = origin.replace(/(lightning\.force\.com|sandbox\.lightning\.force\.com|salesforce-setup\.com)/, "my.salesforce.com");
+  const matchApi = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
+  if (matchApi) {
+    apiOrigin = matchApi[1] + ".my.salesforce.com";
   }
 
   try {
