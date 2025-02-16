@@ -108,7 +108,7 @@ function setupCustomQuickFind(originalInput) {
  exportButton.id = "exportCsvButton";
  exportButton.textContent = "Export CSV";
  exportButton.style.cssText = `
- background-color: hashtag#0070d2;
+ background-color: #0070d2;
  color: white;
  border: none;
  border-radius: 4px;
