@@ -76,56 +76,65 @@ function removeSetupHomeModules() {
 }
 
 async function getOriginalQuickFind() {
-  const container = await waitForElement(".objectManagerGlobalSearchBox");
-  const input = container.querySelector("input[type='search']");
-  if (!input) throw new Error("Object Manager Quick Find input not found.");
-  return input;
+ const container = await waitForElement(".objectManagerGlobalSearchBox");
+ const input = container.querySelector("input[type='search']");
+ if (!input) throw new Error("Object Manager Quick Find input not found.");
+ return input;
 }
 
 function setupCustomQuickFind(originalInput) {
-  if (!originalInput) {
-    console.error("Original Quick Find input not found.");
-    return;
-  }
-  if (originalInput.dataset.customized === "true") {
-    console.log("Custom Quick Find already set up.");
-    return;
-  }
-  const newInput = originalInput.cloneNode(true);
-  newInput.id = "customQuickFind";
-  newInput.dataset.customized = "true";
-  originalInput.parentNode.replaceChild(newInput, originalInput);
-  // Always add the Export CSV button if not present.
-  if (!document.getElementById("exportCsvButton")) {
-    const exportButton = document.createElement("button");
-    exportButton.id = "exportCsvButton";
-    exportButton.textContent = "Export CSV";
-    exportButton.style.cssText = `
-      background-color: #0070d2;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 5px 10px;
-      font-size: 14px;
-      cursor: pointer;
-      margin-left: 10px;
-    `;
-    exportButton.addEventListener("click", exportCSV);
-    const parent = newInput.parentNode;
-    const newButton = Array.from(parent.children).find(el =>
-      el.tagName === "BUTTON" && el.textContent.trim() === "New"
-    );
-    if (newButton) {
-      newButton.parentNode.insertBefore(exportButton, newButton.nextSibling);
-    } else {
-      parent.insertBefore(exportButton, newInput.nextSibling);
-    }
-  }
-  customQuickFindInput = newInput;
-  newInput.addEventListener("input", onQuickFindInput);
-  console.log("Custom Quick Find and Export CSV attached.");
-}
+ if (!originalInput) {
+ console.error("Original Quick Find input not found.");
+ return;
+ }
+ if (originalInput.dataset.customized === "true") {
+ console.log("Custom Quick Find already set up.");
+ return;
+ }
+ const newInput = originalInput.cloneNode(true);
+ newInput.id = "customQuickFind";
+ newInput.dataset.customized = "true";
+ originalInput.parentNode.replaceChild(newInput, originalInput);
 
+ // Ensure the parent container of the input and the button is a flex container
+ const parent = newInput.parentNode;
+ parent.style.display = "flex"; // Make the parent a flex container
+ parent.style.justifyContent = "flex-end"; // Align children (including button) to the right
+ parent.style.alignItems = "center"; // Vertically center items, optional
+ 
+ // Always add the Export CSV button if not present
+ if (!document.getElementById("exportCsvButton")) {
+ const exportButton = document.createElement("button");
+ exportButton.id = "exportCsvButton";
+ exportButton.textContent = "Export CSV";
+ exportButton.style.cssText = `
+ background-color: hashtag#0070d2;
+ color: white;
+ border: none;
+ border-radius: 4px;
+ padding: 5px 10px;
+ font-size: 14px;
+ cursor: pointer;
+ margin-left: auto; /* Aligns button to the right */
+ `;
+ exportButton.addEventListener("click", exportCSV);
+ 
+ // Insert button near the "New" button or after the input element
+ const newButton = Array.from(parent.children).find(el =>
+ el.tagName === "BUTTON" && el.textContent.trim() === "New"
+ );
+ 
+ if (newButton) {
+ newButton.parentNode.insertBefore(exportButton, newButton.nextSibling);
+ } else {
+ parent.insertBefore(exportButton, newInput.nextSibling);
+ }
+ }
+ 
+ customQuickFindInput = newInput;
+ newInput.addEventListener("input", onQuickFindInput);
+ console.log("Custom Quick Find and Export CSV attached.");
+}
 function onQuickFindInput(e) {
   const query = e.target.value.trim().toLowerCase();
   const tableBody = document.querySelector("table tbody");
