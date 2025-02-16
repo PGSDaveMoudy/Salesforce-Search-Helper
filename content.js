@@ -323,7 +323,8 @@ async function exportFullDatabase() {
         }
       }
     });
-    let csvContent = "Object Label,Object API Name,Field Label,Field API Name,Field Type,Picklist Values\n";
+    // Header now includes Field Size.
+    let csvContent = "Object Label,Object API Name,Field Label,Field API Name,Field Type,Field Size,Picklist Values\n";
     for (const obj of objects) {
       const response = await new Promise(resolve => {
         chrome.runtime.sendMessage(
@@ -341,7 +342,7 @@ async function exportFullDatabase() {
             ("" + text).includes(",") || ("" + text).includes('"') || ("" + text).includes("\n")
               ? `"${("" + text).replace(/"/g, '""')}"`
               : text;
-          csvContent += `${escapeCSV(obj.objectLabel)},${escapeCSV(obj.objectApiName)},${escapeCSV(field.fieldLabel)},${escapeCSV(field.fieldApiName)},${escapeCSV(field.fieldType)},${escapeCSV(field.picklistValues)}\n`;
+          csvContent += `${escapeCSV(obj.objectLabel)},${escapeCSV(obj.objectApiName)},${escapeCSV(field.fieldLabel)},${escapeCSV(field.fieldApiName)},${escapeCSV(field.fieldType)},${escapeCSV(field.fieldLength)},${escapeCSV(field.picklistValues)}\n`;
         });
       } else {
         csvContent += `${obj.objectLabel},${obj.objectApiName},Error fetching fields,,,,\n`;
