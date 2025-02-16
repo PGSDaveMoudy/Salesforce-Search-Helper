@@ -1,4 +1,3 @@
-// background.js (Service Worker for Manifest V3)
 async function getSessionCookie(origin) {
   try {
     let cookieUrl = origin;
@@ -6,8 +5,8 @@ async function getSessionCookie(origin) {
     if (match) {
       cookieUrl = match[1] + ".my.salesforce.com";
     }
-    return new Promise((resolve) => {
-      chrome.cookies.get({ url: cookieUrl, name: "sid" }, (cookie) => {
+    return new Promise(resolve => {
+      chrome.cookies.get({ url: cookieUrl, name: "sid" }, cookie => {
         resolve(cookie?.value || null);
       });
     });
@@ -63,16 +62,56 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
   }
 }
 
+async function fetchObjectDescribe({ objectApiName, origin }) {
+  const sessionId = await getSessionCookie(origin);
+  if (!sessionId) return { success: false, error: "No session cookie found." };
+  let apiOrigin = origin;
+  const matchApi = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
+  if (matchApi) {
+    apiOrigin = matchApi[1] + ".my.salesforce.com";
+  }
+  try {
+    const url = `${apiOrigin}/services/data/v56.0/sobjects/${objectApiName}/describe`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionId}`
+      }
+    });
+    if (!response.ok) throw new Error(`Describe API error: ${response.statusText}`);
+    const data = await response.json();
+    const fields = data.fields.map(field => ({
+      fieldLabel: field.label,
+      fieldApiName: field.name,
+      fieldType: field.type,
+      picklistValues: field.picklistValues && field.picklistValues.length
+        ? field.picklistValues.map(v => v.label).join(", ")
+        : ""
+    }));
+    return { success: true, fields };
+  } catch (error) {
+    console.error("Error fetching object describe:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "fetchPicklistValues") {
     fetchPicklistValues(message)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ success: false, error: error.toString() }));
-    return true; // async response
+    return true;
+  }
+  if (message.type === "fetchObjectDescribe") {
+    fetchObjectDescribe(message)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.toString() }));
+    return true;
   }
 });
 
-// Also forward navigation events detected by Chrome's webNavigation API.
+// Forward navigation events detected by the webNavigation API.
 chrome.webNavigation.onHistoryStateUpdated.addListener(details => {
   if (details.frameId === 0 && details.url.includes("/lightning/setup/")) {
     chrome.tabs.sendMessage(details.tabId, { type: "location-changed" });
