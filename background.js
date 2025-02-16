@@ -85,6 +85,7 @@ async function fetchObjectDescribe({ objectApiName, origin }) {
       fieldLabel: field.label,
       fieldApiName: field.name,
       fieldType: field.type,
+      fieldLength: field.length ? field.length : "",
       picklistValues: field.picklistValues && field.picklistValues.length
         ? field.picklistValues.map(v => v.label).join(", ")
         : ""
