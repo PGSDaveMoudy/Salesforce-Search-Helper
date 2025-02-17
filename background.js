@@ -1,3 +1,16 @@
+/**
+* @File Name : background.js
+* @Description : Handles session cookie retrieval, picklist and object describe fetching via Salesforce API.
+* @Author : Dave Moudy
+* @Last Modified By :
+* @Last Modified On :
+* @Modification Log :
+*==============================================================================
+* Ver | Date | Author | Modification
+*==============================================================================
+* 1.0 | February 16, 2025 |   | Initial Version
+**/
+
 async function getSessionCookie(origin) {
   try {
     let cookieUrl = origin;
