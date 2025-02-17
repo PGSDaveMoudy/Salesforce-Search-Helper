@@ -2,7 +2,7 @@
   "manifest_version": 4,
   "name": "Salesforce Field Search Helper",
   "version": "1.1",
-  "description": "Replaces Quick Find and fetches picklist values using the logged‑in session. Now supports full CSV export with a spinner on both detail and homepage.",
+  "description": "Replaces Quick Find and fetches picklist values using the logged‑in session. Now supports XLSX export with selectable objects (custom, standard, or all).",
   "permissions": [
     "cookies",
     "webNavigation"
@@ -24,8 +24,17 @@
         "https://*.lightning.force.com/lightning/setup/*",
         "https://*.salesforce-setup.com/lightning/setup/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "xlsx.full.min.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["xlsx.full.min.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
