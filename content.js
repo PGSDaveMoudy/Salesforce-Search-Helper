@@ -1,33 +1,27 @@
-// Patch history methods to dispatch a custom event on navigation.
-(function(history) {
-  const pushState = history.pushState;
-  const replaceState = history.replaceState;
-  history.pushState = function (...args) {
-    const result = pushState.apply(history, args);
-    window.dispatchEvent(new Event("location-changed"));
-    return result;
-  };
-  history.replaceState = function (...args) {
-    const result = replaceState.apply(history, args);
-    window.dispatchEvent(new Event("location-changed"));
-    return result;
-  };
-})(window.history);
+/**
+* @File Name : content.js
+* @Description : Handles UI modifications, Quick Find customization, auto-scroll, picklist processing, and XLSX export functionality.
+*               On the home page, a modal allows selection of objects to export.
+*               On the detail (fields and relationships) page, an export button is added inline to export the current object.
+* @Author : Dave Moudy
+* @Last Modified By :
+* @Last Modified On :
+* @Modification Log :
+*==============================================================================
+* Ver | Date         | Author    | Modification
+*==============================================================================
+* 1.0 | February 16,2025 |         | Initial Version
+* 1.1 | February 17,2025 |         | Fixed null parent error in setupCustomQuickFind
+* 1.2 | February 17,2025 |         | Added export selection modal for home page
+* 1.3 | February 17,2025 |         | Simplified modal to a single toggle button
+* 1.4 | February 17,2025 |         | Positioned export button inline to the right of Quick Find box on home page
+* 1.5 | February 17,2025 |         | Added export button on detail page (fields and relationships)
+* 1.6 | February 17,2025 |         | Added a Cancel button next to the toggle in the export modal header
+* 1.7 | February 17,2025 |         | Added an Export Selected button in the header so users can export without scrolling
+* 1.8 | February 18,2025 |         | Added a search filter to the export selection modal for faster filtering
+**/
 
-window.addEventListener("popstate", () => window.dispatchEvent(new Event("location-changed")));
-document.addEventListener("aura:locationChange", () => window.dispatchEvent(new Event("location-changed")));
-let lastUrl = location.href;
-setInterval(() => {
-  if (location.href !== lastUrl) {
-    lastUrl = location.href;
-    window.dispatchEvent(new Event("location-changed"));
-  }
-}, 500);
-
-let lastObjectName = null;
-let customQuickFindInput = null;
-
-// --- Utility Functions ---
+// Utility Functions
 function waitForElement(selector, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const el = document.querySelector(selector);
@@ -76,65 +70,51 @@ function removeSetupHomeModules() {
 }
 
 async function getOriginalQuickFind() {
- const container = await waitForElement(".objectManagerGlobalSearchBox");
- const input = container.querySelector("input[type='search']");
- if (!input) throw new Error("Object Manager Quick Find input not found.");
- return input;
+  const container = await waitForElement(".objectManagerGlobalSearchBox");
+  const input = container.querySelector("input[type='search']");
+  if (!input) throw new Error("Object Manager Quick Find input not found.");
+  return input;
 }
 
+// Adds a custom Quick Find input and, on detail pages, an inline export button.
 function setupCustomQuickFind(originalInput) {
- if (!originalInput) {
- console.error("Original Quick Find input not found.");
- return;
- }
- if (originalInput.dataset.customized === "true") {
- console.log("Custom Quick Find already set up.");
- return;
- }
- const newInput = originalInput.cloneNode(true);
- newInput.id = "customQuickFind";
- newInput.dataset.customized = "true";
- originalInput.parentNode.replaceChild(newInput, originalInput);
+  if (!originalInput) {
+    console.error("Original Quick Find input not found.");
+    return;
+  }
+  if (!originalInput.parentNode) {
+    console.error("Original Quick Find input has no parent node.");
+    return;
+  }
+  if (originalInput.dataset.customized === "true") {
+    console.log("Custom Quick Find already set up.");
+    return;
+  }
+  const newInput = originalInput.cloneNode(true);
+  newInput.id = "customQuickFind";
+  newInput.dataset.customized = "true";
+  originalInput.parentNode.replaceChild(newInput, originalInput);
 
- // Ensure the parent container of the input and the button is a flex container
- const parent = newInput.parentNode;
- parent.style.display = "flex"; // Make the parent a flex container
- parent.style.justifyContent = "flex-end"; // Align children (including button) to the right
- parent.style.alignItems = "center"; // Vertically center items, optional
- 
- // Always add the Export CSV button if not present
- if (!document.getElementById("exportCsvButton")) {
- const exportButton = document.createElement("button");
- exportButton.id = "exportCsvButton";
- exportButton.textContent = "Export CSV";
- exportButton.style.cssText = `
- background-color: #0070d2;
- color: white;
- border: none;
- border-radius: 4px;
- padding: 5px 10px;
- font-size: 14px;
- cursor: pointer;
- margin-left: auto; /* Aligns button to the right */
- `;
- exportButton.addEventListener("click", exportCSV);
- 
- // Insert button near the "New" button or after the input element
- const newButton = Array.from(parent.children).find(el =>
- el.tagName === "BUTTON" && el.textContent.trim() === "New"
- );
- 
- if (newButton) {
- newButton.parentNode.insertBefore(exportButton, newButton.nextSibling);
- } else {
- parent.insertBefore(exportButton, newInput.nextSibling);
- }
- }
- 
- customQuickFindInput = newInput;
- newInput.addEventListener("input", onQuickFindInput);
- console.log("Custom Quick Find and Export CSV attached.");
+  // Ensure the parent container is styled inline with the Quick Find box
+  const parent = newInput.parentNode;
+  parent.style.display = "flex";
+  parent.style.justifyContent = "flex-end";
+  parent.style.alignItems = "center";
+  
+  newInput.addEventListener("input", onQuickFindInput);
+  console.log("Custom Quick Find attached.");
+
+  // On detail pages, add an export button inline (if not on the home page)
+  if (!isObjectManagerHomePage() && !document.getElementById("exportDetailXLSXButton")) {
+    const exportButton = document.createElement("button");
+    exportButton.id = "exportDetailXLSXButton";
+    exportButton.textContent = "Export XLSX";
+    exportButton.style.cssText = "background-color: #0070d2; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
+    exportButton.addEventListener("click", exportCurrentObjectFieldsToXLSX);
+    parent.appendChild(exportButton);
+  }
 }
+
 function onQuickFindInput(e) {
   const query = e.target.value.trim().toLowerCase();
   const tableBody = document.querySelector("table tbody");
@@ -171,8 +151,8 @@ function fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStand
         const labelCell = row.querySelector("td");
         if (labelCell) labelCell.setAttribute("title", picklistText);
         console.log(`Fetched picklist for ${fieldApiName}: ${picklistText}`);
-        if (customQuickFindInput) {
-          onQuickFindInput({ target: { value: customQuickFindInput.value } });
+        if (document.getElementById("customQuickFind")) {
+          onQuickFindInput({ target: { value: document.getElementById("customQuickFind").value } });
         }
       } else {
         console.error("Error fetching picklist values:", response && response.error);
@@ -215,32 +195,29 @@ function addFallbackButton() {
   const fallbackBtn = document.createElement("button");
   fallbackBtn.id = "initializeQuickFindButton";
   fallbackBtn.textContent = "Revive Quick Find";
-  fallbackBtn.style.cssText = `
-    background-color: #ff6f61;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 14px;
-    cursor: pointer;
-    margin-left: 10px;
-  `;
+  fallbackBtn.style.cssText = "background-color: #ff6f61; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
   fallbackBtn.addEventListener("click", () => window.location.reload(true));
   container.appendChild(fallbackBtn);
 }
 
-// --- Spinner Functions ---
+// Helper function to generate unique sheet names
+function getUniqueSheetName(sheetName, existingNames) {
+  let uniqueName = sheetName;
+  let suffix = 1;
+  while (existingNames.includes(uniqueName)) {
+    const base = sheetName.substring(0, 31 - suffix.toString().length);
+    uniqueName = base + suffix;
+    suffix++;
+  }
+  return uniqueName;
+}
+
+// Spinner Functions
 function showSpinner() {
   if (document.getElementById("exportSpinner")) return;
   const spinner = document.createElement("div");
   spinner.id = "exportSpinner";
-  spinner.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 9999;
-  `;
+  spinner.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999;";
   spinner.innerHTML = `<div class="spinner"></div>`;
   document.body.appendChild(spinner);
   if (!document.getElementById("spinnerStyles")) {
@@ -269,22 +246,19 @@ function hideSpinner() {
   if (spinner) spinner.remove();
 }
 
-// --- Export Functions ---
+// Export Functions
 function isObjectManagerHomePage() {
   return window.location.pathname.includes("/ObjectManager/home");
 }
 
-// Export for a single object's fields (detail page)
-async function exportCurrentObjectFields() {
+// Exports the fields of the current object (detail page) to XLSX
+async function exportCurrentObjectFieldsToXLSX() {
   showSpinner();
   try {
     const tableBody = await waitForElement("table tbody");
     const rows = tableBody.querySelectorAll("tr");
-    let csvContent = "Field Label,API Name,Field Type,Field Values\n";
-    const escapeCSV = text =>
-      (text.includes(",") || text.includes('"') || text.includes("\n"))
-        ? `"${text.replace(/"/g, '""')}"`
-        : text;
+    let data = [];
+    data.push(["Field Label", "API Name", "Field Type", "Picklist Values"]);
     rows.forEach(row => {
       const cells = row.querySelectorAll("td");
       if (cells.length < 3) return;
@@ -292,30 +266,37 @@ async function exportCurrentObjectFields() {
       const apiName = cells[1].innerText.trim();
       const fieldType = cells[2].innerText.trim();
       const picklistText = row.dataset.picklistText ? row.dataset.picklistText.trim() : "";
-      csvContent += `${escapeCSV(fieldLabel)},${escapeCSV(apiName)},${escapeCSV(fieldType)},${escapeCSV(picklistText)}\n`;
+      data.push([fieldLabel, apiName, fieldType, picklistText]);
     });
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    let wb = XLSX.utils.book_new();
+    const objectName = getObjectNameFromURL() || "Object";
+    let sheetName = objectName.length > 31 ? objectName.substring(0, 31) : objectName;
+    let ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "salesforce_fields_export.csv";
+    a.download = `${objectName}_fields_export.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   } catch (error) {
-    console.error("Error exporting current object fields:", error);
+    console.error("Error exporting current object fields to XLSX:", error);
   } finally {
     hideSpinner();
   }
 }
 
-// Export full database: iterate over all objects on the homepage and fetch their field details.
-async function exportFullDatabase() {
+// Export full database: each object gets its own worksheet
+async function exportFullDatabaseToXLSX() {
   showSpinner();
   try {
     const tableBody = await waitForElement("table tbody");
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     if (rows.length === 0) {
-      console.error("No objects found on the homepage.");
+      console.error("No objects found on the home page.");
       return;
     }
     const objects = [];
@@ -332,8 +313,10 @@ async function exportFullDatabase() {
         }
       }
     });
-    // Header now includes Field Size.
-    let csvContent = "Object Label,Object API Name,Field Label,Field API Name,Field Type,Field Size,Picklist Values\n";
+    
+    let wb = XLSX.utils.book_new();
+    const usedSheetNames = [];
+    
     for (const obj of objects) {
       const response = await new Promise(resolve => {
         chrome.runtime.sendMessage(
@@ -345,126 +328,319 @@ async function exportFullDatabase() {
           resolve
         );
       });
+      let data = [];
+      data.push(["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values"]);
       if (response && response.success && response.fields) {
         response.fields.forEach(field => {
-          const escapeCSV = text =>
-            ("" + text).includes(",") || ("" + text).includes('"') || ("" + text).includes("\n")
-              ? `"${("" + text).replace(/"/g, '""')}"`
-              : text;
-          csvContent += `${escapeCSV(obj.objectLabel)},${escapeCSV(obj.objectApiName)},${escapeCSV(field.fieldLabel)},${escapeCSV(field.fieldApiName)},${escapeCSV(field.fieldType)},${escapeCSV(field.fieldLength)},${escapeCSV(field.picklistValues)}\n`;
+          data.push([
+            field.fieldLabel,
+            field.fieldApiName,
+            field.fieldType,
+            field.fieldLength,
+            field.picklistValues
+          ]);
         });
       } else {
-        csvContent += `${obj.objectLabel},${obj.objectApiName},Error fetching fields,,,,\n`;
+        data.push([obj.objectLabel, obj.objectApiName, "Error fetching fields", "", ""]);
       }
+      
+      let sheetName = obj.objectLabel;
+      sheetName = sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName;
+      sheetName = getUniqueSheetName(sheetName, usedSheetNames);
+      usedSheetNames.push(sheetName);
+      
+      let ws = XLSX.utils.aoa_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
     }
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "salesforce_objects_fields_export.csv";
+    a.download = "salesforce_objects_fields_export.xlsx";
     document.body.appendChild(a);
     a.click();
     a.remove();
   } catch (error) {
-    console.error("Error exporting full database:", error);
+    console.error("Error exporting full database to XLSX:", error);
   } finally {
     hideSpinner();
   }
 }
 
-// Main export function chooses mode based on page.
-function exportCSV() {
-  if (isObjectManagerHomePage()) {
-    exportFullDatabase();
-  } else {
-    exportCurrentObjectFields();
+// Export selected objects as XLSX
+async function exportSelectedObjectsToXLSX(selectedObjects) {
+  showSpinner();
+  try {
+    let wb = XLSX.utils.book_new();
+    const usedSheetNames = [];
+    for (const obj of selectedObjects) {
+      const response = await new Promise(resolve => {
+        chrome.runtime.sendMessage(
+          {
+            type: "fetchObjectDescribe",
+            objectApiName: obj.objectApiName,
+            origin: window.location.origin
+          },
+          resolve
+        );
+      });
+      let data = [];
+      data.push(["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values"]);
+      if (response && response.success && response.fields) {
+        response.fields.forEach(field => {
+          data.push([field.fieldLabel, field.fieldApiName, field.fieldType, field.fieldLength, field.picklistValues]);
+        });
+      } else {
+        data.push([obj.objectLabel, obj.objectApiName, "Error fetching fields", "", ""]);
+      }
+      let sheetName = obj.objectLabel;
+      sheetName = sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName;
+      sheetName = getUniqueSheetName(sheetName, usedSheetNames);
+      usedSheetNames.push(sheetName);
+      let ws = XLSX.utils.aoa_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    }
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "selected_salesforce_objects_fields_export.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (error) {
+    console.error("Error exporting selected objects to XLSX:", error);
+  } finally {
+    hideSpinner();
   }
 }
 
-// --- Main Initialization ---
-async function initPicklistProcessing() {
-  // Only run on Lightning Setup pages.
+// Modal to select objects to export with a header containing a toggle, Export Selected, Cancel button, and a search filter
+async function showExportSelectionModal() {
+  try {
+    const tableBody = await waitForElement("table tbody");
+    const rows = Array.from(tableBody.querySelectorAll("tr"));
+    const objects = [];
+    rows.forEach(row => {
+      const link = row.querySelector("a");
+      if (link && link.href) {
+        const match = link.href.match(/ObjectManager\/([^\/]+)/);
+        if (match && match[1]) {
+          const objectApiName = decodeURIComponent(match[1]);
+          const objectLabel = row.querySelector("td")
+            ? row.querySelector("td").innerText.trim()
+            : objectApiName;
+          objects.push({ objectLabel, objectApiName });
+        }
+      }
+    });
+    // Create modal overlay
+    const modal = document.createElement("div");
+    modal.id = "exportSelectionModal";
+    modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;";
+    
+    const container = document.createElement("div");
+    container.style.cssText = "background: white; padding: 20px; border-radius: 5px; max-height: 80%; overflow-y: auto; width: 300px;";
+    
+    const title = document.createElement("h2");
+    title.innerText = "Select Objects to Export";
+    container.appendChild(title);
+    
+    // Header container with toggle, Export Selected, and Cancel buttons
+    const headerContainer = document.createElement("div");
+    headerContainer.style.cssText = "display: flex; justify-content: space-between; margin-bottom: 10px;";
+    
+    const toggleBtn = document.createElement("button");
+    toggleBtn.innerText = "Select All";
+    toggleBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
+    toggleBtn.addEventListener("click", () => {
+      const checkboxes = container.querySelectorAll("label > input[type='checkbox']");
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      checkboxes.forEach(cb => { cb.checked = !allChecked; });
+      toggleBtn.innerText = allChecked ? "Select All" : "Deselect All";
+    });
+    
+    const headerExportBtn = document.createElement("button");
+    headerExportBtn.innerText = "Export Selected";
+    headerExportBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
+    headerExportBtn.addEventListener("click", async () => {
+      const selectedCheckboxes = container.querySelectorAll("label > input[type='checkbox']:checked");
+      const selectedObjects = [];
+      selectedCheckboxes.forEach(cb => {
+        const apiName = cb.value;
+        const correspondingObj = objects.find(o => o.objectApiName === apiName);
+        if (correspondingObj) {
+          selectedObjects.push(correspondingObj);
+        }
+      });
+      document.body.removeChild(modal);
+      await exportSelectedObjectsToXLSX(selectedObjects);
+    });
+    
+    const headerCancelBtn = document.createElement("button");
+    headerCancelBtn.innerText = "Cancel";
+    headerCancelBtn.style.cssText = "padding: 5px; background: #aaa; color: white; border: none; border-radius: 4px; cursor: pointer;";
+    headerCancelBtn.addEventListener("click", () => {
+      document.body.removeChild(modal);
+    });
+    
+    headerContainer.appendChild(toggleBtn);
+    headerContainer.appendChild(headerExportBtn);
+    headerContainer.appendChild(headerCancelBtn);
+    container.appendChild(headerContainer);
+    
+    // Search filter input for objects
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "Search objects...";
+    searchInput.style.cssText = "width: 100%; padding: 5px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;";
+    searchInput.addEventListener("input", () => {
+      const filter = searchInput.value.trim().toLowerCase();
+      const labels = container.querySelectorAll("label");
+      labels.forEach(label => {
+        // Skip header labels (if any) by checking if the label contains an input checkbox
+        const text = label.textContent.toLowerCase();
+        if (text.indexOf(filter) > -1) {
+          label.style.display = "block";
+        } else {
+          label.style.display = "none";
+        }
+      });
+    });
+    container.appendChild(searchInput);
+    
+    // List objects with checkboxes (initially all unchecked)
+    objects.forEach(obj => {
+      const label = document.createElement("label");
+      label.style.display = "block";
+      label.style.marginBottom = "5px";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = obj.objectApiName;
+      checkbox.checked = false;
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(" " + obj.objectLabel));
+      container.appendChild(label);
+    });
+    
+    // Also add a bottom Export Selected button (optional)
+    const bottomExportBtn = document.createElement("button");
+    bottomExportBtn.innerText = "Export Selected";
+    bottomExportBtn.style.cssText = "margin-top: 10px; padding: 5px 10px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;";
+    bottomExportBtn.addEventListener("click", async () => {
+      const selectedCheckboxes = container.querySelectorAll("label > input[type='checkbox']:checked");
+      const selectedObjects = [];
+      selectedCheckboxes.forEach(cb => {
+        const apiName = cb.value;
+        const correspondingObj = objects.find(o => o.objectApiName === apiName);
+        if (correspondingObj) {
+          selectedObjects.push(correspondingObj);
+        }
+      });
+      document.body.removeChild(modal);
+      await exportSelectedObjectsToXLSX(selectedObjects);
+    });
+    container.appendChild(bottomExportBtn);
+    
+    modal.appendChild(container);
+    document.body.appendChild(modal);
+  } catch (error) {
+    console.error("Error showing export selection modal:", error);
+  }
+}
+
+// Main export function
+function exportXLSX() {
+  if (isObjectManagerHomePage()) {
+    // For home page, show the modal for selection
+    showExportSelectionModal();
+  } else {
+    exportCurrentObjectFieldsToXLSX();
+  }
+}
+
+// Main Initialization
+let lastObjectName = null;
+function initPicklistProcessing() {
   if (!window.location.pathname.includes("/lightning/setup/")) return;
   
   if (isObjectManagerHomePage()) {
-    try {
-      // Auto-scroll the homepage to load all objects.
-      const scrollContainer = document.querySelector(".forceVirtualList, .slds-scrollable_y, .scroller.uiScroller");
-      if (scrollContainer) {
-        await autoScrollAndWait(scrollContainer);
-        console.log("Auto scrolling finished for homepage.");
+    (async () => {
+      try {
+        const scrollContainer = document.querySelector(".forceVirtualList, .slds-scrollable_y, .scroller.uiScroller");
+        if (scrollContainer) {
+          await autoScrollAndWait(scrollContainer);
+          console.log("Auto scrolling finished for home page.");
+        }
+        const container = await waitForElement(".objectManagerGlobalSearchBox");
+        // Ensure container is styled as flex so buttons align to the right
+        container.style.display = "flex";
+        container.style.alignItems = "center";
+        container.style.justifyContent = "flex-end";
+        let input = container.querySelector("input[type='search']");
+        if (input) {
+          setupCustomQuickFind(input);
+        }
+        // Add the button for selection modal if not present
+        if (!document.getElementById("exportSelectionButton")) {
+          const selectionButton = document.createElement("button");
+          selectionButton.id = "exportSelectionButton";
+          selectionButton.textContent = "Select Objects to Export";
+          selectionButton.style.cssText = "background-color: #0070d2; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
+          selectionButton.addEventListener("click", showExportSelectionModal);
+          container.appendChild(selectionButton);
+        }
+        console.log("Home page initialization complete.");
+      } catch (error) {
+        console.error("Error during home page initialization:", error);
       }
-      // Attach export button via the Quick Find container if available.
-      const container = await waitForElement(".objectManagerGlobalSearchBox");
-      let input = container.querySelector("input[type='search']");
-      if (input) {
-        setupCustomQuickFind(input);
-      } else if (!document.getElementById("exportCsvButton")) {
-        const exportButton = document.createElement("button");
-        exportButton.id = "exportCsvButton";
-        exportButton.textContent = "Export CSV";
-        exportButton.style.cssText = `
-          background-color: #0070d2;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 5px 10px;
-          font-size: 14px;
-          cursor: pointer;
-          margin-left: 10px;
-        `;
-        exportButton.addEventListener("click", exportCSV);
-        container.appendChild(exportButton);
-      }
-      console.log("Homepage initialization complete.");
-    } catch (error) {
-      console.error("Error during homepage initialization:", error);
-    }
+    })();
     return;
   }
-
-  // Detail pages: perform full initialization.
+  
+  // Detail page initialization (fields and relationships)
   removeSetupHomeModules();
   const objectName = getObjectNameFromURL();
   if (lastObjectName && lastObjectName !== objectName) {
     const existing = document.getElementById("customQuickFind");
     if (existing) {
       existing.remove();
-      customQuickFindInput = null;
     }
   }
   lastObjectName = objectName;
-  try {
-    const originalQuickFind = await getOriginalQuickFind();
-    console.log("Found original Quick Find.");
-    await waitForElement("table tbody");
-    const container = document.querySelector(".scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native");
-    if (container) {
-      await autoScrollAndWait(container);
-      console.log("Auto scrolling finished on detail page.");
+  (async () => {
+    try {
+      const originalQuickFind = await getOriginalQuickFind();
+      console.log("Found original Quick Find.");
+      await waitForElement("table tbody");
+      const container = document.querySelector(".scroller.uiScroller.scroller-wrapper.scroll-bidirectional.native");
+      if (container) {
+        await autoScrollAndWait(container);
+        console.log("Auto scrolling finished on detail page.");
+      }
+      setupCustomQuickFind(originalQuickFind);
+      processPicklistRows();
+      const tableBody = document.querySelector("table tbody");
+      if (tableBody) {
+        const observer = new MutationObserver(mutations => {
+          if (mutations.some(m => m.addedNodes.length)) processPicklistRows();
+        });
+        observer.observe(tableBody, { childList: true });
+      }
+      console.log("Detail page initialization complete.");
+    } catch (error) {
+      console.error("Error during detail page initialization:", error);
     }
-    setupCustomQuickFind(originalQuickFind);
-    processPicklistRows();
-    const tableBody = document.querySelector("table tbody");
-    if (tableBody) {
-      const observer = new MutationObserver(mutations => {
-        if (mutations.some(m => m.addedNodes.length)) processPicklistRows();
-      });
-      observer.observe(tableBody, { childList: true });
-    }
-    console.log("Detail page initialization complete.");
-  } catch (error) {
-    console.error("Error during detail page initialization:", error);
-  }
+  })();
 }
 
-// Listen for our custom navigation event.
 window.addEventListener("location-changed", () => {
   console.log("location-changed event detected.");
   lastObjectName = null;
   setTimeout(initPicklistProcessing, 500);
 });
 
-// Also listen for background-sent navigation messages.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "location-changed") {
     console.log("Received location-changed from background.");
@@ -473,12 +649,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Always initialize on hard refresh.
 initPicklistProcessing().catch(console.error);
-
-// Fallback in case Quick Find isn’t set up.
 setTimeout(() => {
-  if (!customQuickFindInput) {
+  if (!document.getElementById("customQuickFind")) {
     console.warn("Quick Find not initialized; adding fallback.");
     addFallbackButton();
   }
