@@ -3,6 +3,7 @@
 * @Description : Handles UI modifications, Quick Find customization, auto-scroll, picklist processing, and XLSX export functionality.
 *               On the home page, a modal allows selection of objects to export.
 *               On the detail (fields and relationships) page, an export button is added inline to export the current object.
+*               Additionally, on detail pages a button is added to display a modal listing fields missing Description and/or Help Text.
 * @Author : Dave Moudy
 * @Last Modified By :
 * @Last Modified On :
@@ -12,6 +13,7 @@
 *==============================================================================
 * 1.0 | February 16,2025 |            | Initial Version
 * 1.1 | February 20,2025 | Dave Moudy | Placed export button next to Quick Find, used closest scrollable parent for autoscroll
+* 1.2 | February 21,2025 | Dave Moudy | Added Missing Field Info modal on detail pages and adjusted button positioning
 **/
 
 // ---------------------
@@ -124,20 +126,24 @@ function setupCustomQuickFind(originalInput) {
   const newInput = originalInput.cloneNode(true);
   newInput.id = "customQuickFind";
   newInput.dataset.customized = "true";
+  // Allow the input to take available space on the left.
+  newInput.style.flex = "1";
   originalInput.parentNode.replaceChild(newInput, originalInput);
 
-  // Make the parent container flex so we can place our button on the right
+  // Set up the parent container so buttons are appended to the right.
   const parent = newInput.parentNode;
   parent.style.display = "flex";
-  parent.style.justifyContent = "flex-end";
   parent.style.alignItems = "center";
+  // Use flex-start so the input stays on the left.
+  parent.style.justifyContent = "flex-start";
   
   newInput.addEventListener("input", onQuickFindInput);
   console.log("Custom Quick Find attached.");
 
-  // If on a detail page, add an export button inline
+  // If on a detail page, add inline buttons.
   if (!isObjectManagerHomePage()) {
     addInlineExportButton(parent);
+    addMissingFieldInfoButton(parent);
   }
 }
 
@@ -659,6 +665,169 @@ async function showExportSelectionModal() {
 }
 
 // ---------------------
+// New Functionality: Missing Field Info Modal
+// ---------------------
+
+// Build a mapping of field labels to their IDs by scanning existing edit links on the page.
+function getFieldIdMapping() {
+  const mapping = {};
+  // Look for anchor elements with href matching the pattern for field edit pages.
+  const anchors = document.querySelectorAll('a[href*="/FieldsAndRelationships/"]');
+  anchors.forEach(anchor => {
+    const match = anchor.href.match(/\/FieldsAndRelationships\/([^\/]+)\/edit/);
+    if (match && match[1]) {
+      const fieldId = match[1];
+      const label = anchor.textContent.trim();
+      if (label) {
+        mapping[label] = fieldId;
+      }
+    }
+  });
+  return mapping;
+}
+
+// Create and display the modal listing fields missing Description or Help Text.
+function showMissingFieldsModal(fields, objectApiName) {
+  // Create an overlay
+  const overlay = document.createElement("div");
+  overlay.id = "missing-fields-modal-overlay";
+  overlay.style.position = "fixed";
+  overlay.style.top = "0";
+  overlay.style.left = "0";
+  overlay.style.width = "100%";
+  overlay.style.height = "100%";
+  overlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+  overlay.style.zIndex = "10000";
+  overlay.style.display = "flex";
+  overlay.style.justifyContent = "center";
+  overlay.style.alignItems = "center";
+
+  // Create the modal container
+  const modal = document.createElement("div");
+  modal.id = "missing-fields-modal";
+  modal.style.backgroundColor = "#fff";
+  modal.style.padding = "20px";
+  modal.style.borderRadius = "5px";
+  modal.style.maxWidth = "600px";
+  modal.style.maxHeight = "80%";
+  modal.style.overflowY = "auto";
+  modal.style.boxShadow = "0 0 10px rgba(0,0,0,0.3)";
+  modal.style.position = "relative";
+
+  // Close button
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "Close";
+  closeBtn.style.position = "absolute";
+  closeBtn.style.top = "10px";
+  closeBtn.style.right = "10px";
+  closeBtn.style.cursor = "pointer";
+  closeBtn.addEventListener("click", () => {
+    document.body.removeChild(overlay);
+  });
+  modal.appendChild(closeBtn);
+
+  // Title for the modal
+  const title = document.createElement("h2");
+  title.textContent = "Fields Missing Description or Help Text";
+  title.style.marginTop = "0";
+  modal.appendChild(title);
+
+  // Get mapping from field label to field ID (if available)
+  const fieldIdMapping = getFieldIdMapping();
+
+  if (fields.length === 0) {
+    const noFieldsMsg = document.createElement("p");
+    noFieldsMsg.textContent = "All fields have both Description and Help Text.";
+    modal.appendChild(noFieldsMsg);
+  } else {
+    const list = document.createElement("ul");
+    fields.forEach(field => {
+      const listItem = document.createElement("li");
+      listItem.style.marginBottom = "8px";
+
+      // Check if we have an edit link (based on field label mapping)
+      const fieldId = fieldIdMapping[field.fieldLabel];
+      if (fieldId) {
+        const link = document.createElement("a");
+        link.href = `${window.location.origin}/lightning/setup/ObjectManager/${objectApiName}/FieldsAndRelationships/${fieldId}/edit`;
+        link.textContent = field.fieldLabel;
+        link.target = "_blank";
+        link.style.textDecoration = "underline";
+        link.style.color = "#0070d2";
+        listItem.appendChild(link);
+      } else {
+        const span = document.createElement("span");
+        span.textContent = field.fieldLabel;
+        listItem.appendChild(span);
+      }
+
+      // Indicate which info is missing
+      const missingInfo = [];
+      if (!field.description || !field.description.trim()) missingInfo.push("Description");
+      if (!field.inlineHelpText || !field.inlineHelpText.trim()) missingInfo.push("Help Text");
+
+      const infoSpan = document.createElement("span");
+      infoSpan.style.marginLeft = "10px";
+      infoSpan.style.color = "red";
+      infoSpan.textContent = ` (Missing: ${missingInfo.join(", ")})`;
+      listItem.appendChild(infoSpan);
+
+      list.appendChild(listItem);
+    });
+    modal.appendChild(list);
+  }
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+// When the Missing Field Info button is clicked, fetch field describe and show modal.
+function checkMissingFieldInfo() {
+  const objectApiName = getObjectNameFromURL();
+  if (!objectApiName) {
+    alert("Could not determine Object API Name from URL.");
+    return;
+  }
+  chrome.runtime.sendMessage(
+    { type: "fetchObjectDescribe", objectApiName, origin: window.location.origin },
+    response => {
+      if (!response.success) {
+        alert("Error fetching object details: " + response.error);
+        return;
+      }
+      // Filter fields missing Description or Help Text.
+      // Note: This assumes the describe response includes 'description' and 'inlineHelpText' properties.
+      const missingFields = response.fields.filter(field =>
+        (!field.description || !field.description.trim()) ||
+        (!field.inlineHelpText || !field.inlineHelpText.trim())
+      );
+      showMissingFieldsModal(missingFields, objectApiName);
+    }
+  );
+}
+
+// Add the Missing Field Info button to the UI on detail pages.
+function addMissingFieldInfoButton(parentContainer) {
+  if (document.getElementById("missingFieldInfoButton")) return;
+  
+  const btn = document.createElement("button");
+  btn.id = "missingFieldInfoButton";
+  btn.textContent = "Check Missing Field Info";
+  btn.style.cssText = `
+    background-color: #0070d2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 10px;
+  `;
+  btn.addEventListener("click", checkMissingFieldInfo);
+  parentContainer.appendChild(btn);
+}
+
+// ---------------------
 // Main Flow
 // ---------------------
 
@@ -691,7 +860,7 @@ function initPicklistProcessing() {
         const container = await waitForElement(".objectManagerGlobalSearchBox, div[role='search']");
         container.style.display = "flex";
         container.style.alignItems = "center";
-        container.style.justifyContent = "flex-end";
+        container.style.justifyContent = "flex-start";
         let input = container.querySelector("input[type='search']");
         if (input) {
           setupCustomQuickFind(input);
