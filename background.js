@@ -2,25 +2,26 @@
 * @File Name : background.js
 * @Description : Handles session cookie retrieval, picklist and object describe fetching via Salesforce API.
 * @Author : Dave Moudy
-* @Last Modified By :
-* @Last Modified On :
+* @Last Modified By : Dave Moudy
+* @Last Modified On : February 18,2025
 * @Modification Log :
 *==============================================================================
 * Ver | Date         | Author    | Modification
 *==============================================================================
 * 1.0 | February 16,2025 |         | Initial Version
 * 1.1 | February 18,2025 | Dave Moudy | Updated URL conversion to support dev orgs
+* 1.2 | February 18,2025 | Dave Moudy | Fixed URL conversion for sandbox my.salesforce-setup domains
 **/
 
 // Helper to convert a Lightning URL into its My Salesforce domain.
-// For example, converts:
-//   https://portwoodglobal-dev-ed.develop.lightning.force.com
-// to:
-//   https://portwoodglobal-dev-ed.develop.my.salesforce.com
 function getMySalesforceDomain(origin) {
+  if (origin.includes("my.salesforce-setup.com")) {
+    return origin.replace("my.salesforce-setup.com", "my.salesforce.com");
+  }
   if (origin.includes("lightning.force.com")) {
     return origin.replace("lightning.force.com", "my.salesforce.com");
-  } else if (origin.includes("salesforce-setup.com")) {
+  }
+  if (origin.includes("salesforce-setup.com")) {
     return origin.replace("salesforce-setup.com", "my.salesforce.com");
   }
   return origin;
