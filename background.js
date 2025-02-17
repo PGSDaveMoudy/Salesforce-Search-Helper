@@ -6,18 +6,29 @@
 * @Last Modified On :
 * @Modification Log :
 *==============================================================================
-* Ver | Date | Author | Modification
+* Ver | Date         | Author    | Modification
 *==============================================================================
-* 1.0 | February 16, 2025 |   | Initial Version
+* 1.0 | February 16,2025 |         | Initial Version
+* 1.1 | February 18,2025 | Dave Moudy | Updated URL conversion to support dev orgs
 **/
+
+// Helper to convert a Lightning URL into its My Salesforce domain.
+// For example, converts:
+//   https://portwoodglobal-dev-ed.develop.lightning.force.com
+// to:
+//   https://portwoodglobal-dev-ed.develop.my.salesforce.com
+function getMySalesforceDomain(origin) {
+  if (origin.includes("lightning.force.com")) {
+    return origin.replace("lightning.force.com", "my.salesforce.com");
+  } else if (origin.includes("salesforce-setup.com")) {
+    return origin.replace("salesforce-setup.com", "my.salesforce.com");
+  }
+  return origin;
+}
 
 async function getSessionCookie(origin) {
   try {
-    let cookieUrl = origin;
-    const match = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
-    if (match) {
-      cookieUrl = match[1] + ".my.salesforce.com";
-    }
+    let cookieUrl = getMySalesforceDomain(origin);
     return new Promise(resolve => {
       chrome.cookies.get({ url: cookieUrl, name: "sid" }, cookie => {
         resolve(cookie?.value || null);
@@ -32,11 +43,7 @@ async function getSessionCookie(origin) {
 async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandard }) {
   const sessionId = await getSessionCookie(origin);
   if (!sessionId) return { success: false, error: "No session cookie found." };
-  let apiOrigin = origin;
-  const matchApi = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
-  if (matchApi) {
-    apiOrigin = matchApi[1] + ".my.salesforce.com";
-  }
+  const apiOrigin = getMySalesforceDomain(origin);
   try {
     if (isStandard) {
       const url = `${apiOrigin}/services/data/v56.0/sobjects/${objectName}/describe`;
@@ -78,11 +85,7 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
 async function fetchObjectDescribe({ objectApiName, origin }) {
   const sessionId = await getSessionCookie(origin);
   if (!sessionId) return { success: false, error: "No session cookie found." };
-  let apiOrigin = origin;
-  const matchApi = origin.match(/^(https:\/\/[^.]+)(?:\.sandbox)?\.(?:lightning\.force\.com|salesforce-setup\.com)/);
-  if (matchApi) {
-    apiOrigin = matchApi[1] + ".my.salesforce.com";
-  }
+  const apiOrigin = getMySalesforceDomain(origin);
   try {
     const url = `${apiOrigin}/services/data/v56.0/sobjects/${objectApiName}/describe`;
     const response = await fetch(url, {
