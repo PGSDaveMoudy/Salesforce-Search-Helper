@@ -2,8 +2,8 @@
 * @File Name : content.js
 * @Description : Handles UI modifications, Quick Find customization, auto-scroll, picklist processing, and XLSX export functionality.
 *               On the home page, a modal allows selection of objects to export.
-*               On the detail (fields and relationships) page, an export button is added inline to export the current object.
-*               Additionally, on detail pages a button is added to display a modal listing fields missing Description and/or Help Text.
+*               On the detail (fields and relationships) page, an export button is added inline (to the right of the Quick Find box)
+*               along with the New, Deleted Fields, Field Dependencies, and Set History Tracking buttons.
 * @Author : Dave Moudy
 * @Last Modified By :
 * @Last Modified On :
@@ -13,7 +13,9 @@
 *==============================================================================
 * 1.0 | February 16,2025 |            | Initial Version
 * 1.1 | February 20,2025 | Dave Moudy | Placed export button next to Quick Find, used closest scrollable parent for autoscroll
-* 1.2 | February 21,2025 | Dave Moudy | Added Missing Field Info modal on detail pages and adjusted button positioning
+* 1.2 | February 20,2025 | Dave Moudy | Implemented fetching of custom object API name using Tooling API
+* 1.3 | February 17,2025 | Dave Moudy | Added mapping for field types to Salesforce-style terms and updated export functions
+* 1.4 | February 17,2025 | Dave Moudy | Adjusted inline export XLSX button position and added spinner for opening the export modal
 **/
 
 // ---------------------
@@ -74,10 +76,26 @@ function autoScrollAndWait(container) {
   });
 }
 
-// Extract the object name from the URL for detail pages
-function getObjectNameFromURL() {
+// Extract the object API name from the URL for detail pages.
+// If the extracted identifier is a Salesforce ID, fetch the API name via the Tooling API.
+async function getObjectApiNameFromURL() {
   const match = window.location.pathname.match(/(?:ObjectManager\/|\/sObject\/)([^\/]+)/);
-  return match && match[1] ? decodeURIComponent(match[1]) : null;
+  let identifier = match && match[1] ? decodeURIComponent(match[1]) : null;
+  if (!identifier) return null;
+  // If identifier is a Salesforce ID (15 or 18 alphanumeric characters)
+  if (/^[a-zA-Z0-9]{15,18}$/.test(identifier)) {
+    const response = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ type: "fetchCustomObjectApiName", objectId: identifier, origin: window.location.origin }, resolve);
+    });
+    if (response && response.success) {
+      return response.apiName;
+    } else {
+      console.error("Failed to fetch custom object API name:", response.error);
+      return null;
+    }
+  }
+  // Otherwise, assume it’s already the API name.
+  return identifier;
 }
 
 // Remove extraneous modules from Setup Home
@@ -95,14 +113,12 @@ function isObjectManagerHomePage() {
 // ---------------------
 
 async function getOriginalQuickFind() {
-  // Attempt to find the Quick Find container
   let container = document.querySelector(".objectManagerGlobalSearchBox");
   if (!container) {
     container = document.querySelector("div[role='search']");
   }
   if (!container) throw new Error("Quick Find container not found.");
   
-  // Then find the search input
   const input = container.querySelector("input[type='search']");
   if (!input) throw new Error("Quick Find input not found.");
   return input;
@@ -122,49 +138,24 @@ function setupCustomQuickFind(originalInput) {
     return;
   }
   
-  // Clone the input so we can manage the 'input' event
   const newInput = originalInput.cloneNode(true);
   newInput.id = "customQuickFind";
   newInput.dataset.customized = "true";
-  // Allow the input to take available space on the left.
-  newInput.style.flex = "1";
   originalInput.parentNode.replaceChild(newInput, originalInput);
 
-  // Set up the parent container so buttons are appended to the right.
+  // Ensure the container displays its children inline.
   const parent = newInput.parentNode;
   parent.style.display = "flex";
+  parent.style.justifyContent = "flex-end";
   parent.style.alignItems = "center";
-  // Use flex-start so the input stays on the left.
-  parent.style.justifyContent = "flex-start";
   
   newInput.addEventListener("input", onQuickFindInput);
   console.log("Custom Quick Find attached.");
 
-  // If on a detail page, add inline buttons.
+  // For detail pages, append the inline Export XLSX button to the same container.
   if (!isObjectManagerHomePage()) {
     addInlineExportButton(parent);
-    addMissingFieldInfoButton(parent);
   }
-}
-
-function addInlineExportButton(parentContainer) {
-  if (document.getElementById("exportDetailXLSXButton")) return;
-  
-  const exportButton = document.createElement("button");
-  exportButton.id = "exportDetailXLSXButton";
-  exportButton.textContent = "Export XLSX";
-  exportButton.style.cssText = `
-    background-color: #0070d2; 
-    color: white; 
-    border: none; 
-    border-radius: 4px; 
-    padding: 5px 10px; 
-    font-size: 14px; 
-    cursor: pointer; 
-    margin-left: 10px;
-  `;
-  exportButton.addEventListener("click", exportCurrentObjectFieldsToXLSX);
-  parentContainer.appendChild(exportButton);
 }
 
 function onQuickFindInput(e) {
@@ -189,30 +180,6 @@ function onQuickFindInput(e) {
       ? ""
       : "none";
   });
-}
-
-function addFallbackButton() {
-  if (document.getElementById("initializeQuickFindButton")) return;
-  
-  const container = document.querySelector(".objectManagerGlobalSearchBox") 
-                 || document.querySelector("div[role='search']");
-  if (!container) return;
-  
-  const fallbackBtn = document.createElement("button");
-  fallbackBtn.id = "initializeQuickFindButton";
-  fallbackBtn.textContent = "Revive Quick Find";
-  fallbackBtn.style.cssText = `
-    background-color: #ff6f61; 
-    color: white; 
-    border: none; 
-    border-radius: 4px; 
-    padding: 5px 10px; 
-    font-size: 14px; 
-    cursor: pointer; 
-    margin-left: 10px;
-  `;
-  fallbackBtn.addEventListener("click", () => window.location.reload(true));
-  container.appendChild(fallbackBtn);
 }
 
 // ---------------------
@@ -247,11 +214,11 @@ function fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStand
   );
 }
 
-function processPicklistRows() {
+async function processPicklistRows() {
   const tableBody = document.querySelector("table tbody");
   if (!tableBody) return;
   
-  const objectName = getObjectNameFromURL();
+  const objectName = await getObjectApiNameFromURL();
   if (!objectName) {
     console.error("Could not determine object name.");
     return;
@@ -297,7 +264,7 @@ function showSpinner() {
   const spinner = document.createElement("div");
   spinner.id = "exportSpinner";
   spinner.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999;";
-  spinner.innerHTML = `<div class="spinner"></div>`;
+  spinner.innerHTML = '<div class="spinner"></div>';
   document.body.appendChild(spinner);
   if (!document.getElementById("spinnerStyles")) {
     const style = document.createElement("style");
@@ -326,6 +293,34 @@ function hideSpinner() {
 }
 
 // ---------------------
+// Helper: Map Field Types for Export
+// ---------------------
+/**
+* @File Name : content.js
+* @Description : Helper to map field types to Salesforce-specific terms for export.
+* @Author : Dave Moudy
+* @Last Modified By :
+* @Last Modified On :
+* @Modification Log :
+*==============================================================================
+* Ver | Date         | Author    | Modification
+*==============================================================================  
+* 1.3 | February 17,2025 | Dave Moudy | Added mapping for field types (e.g., Reference → Lookup(User), Double → Number(4,0), String → Text(500))
+**/
+function mapFieldTypeForExport(fieldType, fieldLength) {
+  switch (fieldType.toLowerCase()) {
+    case 'reference':
+      return 'Lookup(User)';
+    case 'double':
+      return 'Number(4,0)';
+    case 'string':
+      return `Text(${fieldLength || 500})`;
+    default:
+      return fieldType.charAt(0).toUpperCase() + fieldType.slice(1);
+  }
+}
+
+// ---------------------
 // Export Routines
 // ---------------------
 
@@ -342,12 +337,14 @@ async function exportCurrentObjectFieldsToXLSX() {
       if (cells.length < 3) return;
       const fieldLabel = cells[0].innerText.trim();
       const apiName = cells[1].innerText.trim();
-      const fieldType = cells[2].innerText.trim();
+      const originalFieldType = cells[2].innerText.trim();
+      // Map field type using our helper; using a default length of 500 for current object fields
+      const mappedFieldType = mapFieldTypeForExport(originalFieldType, 500);
       const picklistText = row.dataset.picklistText ? row.dataset.picklistText.trim() : "";
-      data.push([fieldLabel, apiName, fieldType, picklistText]);
+      data.push([fieldLabel, apiName, mappedFieldType, picklistText]);
     });
     let wb = XLSX.utils.book_new();
-    const objectName = getObjectNameFromURL() || "Object";
+    const objectName = (await getObjectApiNameFromURL()) || "Object";
     let sheetName = objectName.length > 31 ? objectName.substring(0, 31) : objectName;
     let ws = XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -378,19 +375,30 @@ async function exportFullDatabaseToXLSX() {
       return;
     }
     const objects = [];
-    rows.forEach(row => {
+    for (const row of rows) {
       const link = row.querySelector("a");
       if (link && link.href) {
         const match = link.href.match(/(?:ObjectManager\/|\/sObject\/)([^\/]+)/);
         if (match && match[1]) {
-          const objectApiName = decodeURIComponent(match[1]);
+          let identifier = decodeURIComponent(match[1]);
+          let objectApiName = identifier;
+          if (/^[a-zA-Z0-9]{15,18}$/.test(identifier)) {
+            const response = await new Promise(resolve => {
+              chrome.runtime.sendMessage({ type: "fetchCustomObjectApiName", objectId: identifier, origin: window.location.origin }, resolve);
+            });
+            if (response && response.success) {
+              objectApiName = response.apiName;
+            } else {
+              console.error("Failed to fetch custom object API name for home page row:", response.error);
+            }
+          }
           const objectLabel = row.querySelector("td")
             ? row.querySelector("td").innerText.trim()
             : objectApiName;
           objects.push({ objectLabel, objectApiName });
         }
       }
-    });
+    }
     
     let wb = XLSX.utils.book_new();
     const usedSheetNames = [];
@@ -410,11 +418,12 @@ async function exportFullDatabaseToXLSX() {
       data.push(["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values"]);
       if (response && response.success && response.fields) {
         response.fields.forEach(field => {
+          const mappedFieldType = mapFieldTypeForExport(field.fieldType, field.fieldLength);
           data.push([
             field.fieldLabel,
             field.fieldApiName,
-            field.fieldType,
-            field.fieldLength,
+            mappedFieldType,
+            field.fieldLength ? field.fieldLength : "",
             field.picklistValues
           ]);
         });
@@ -467,11 +476,12 @@ async function exportSelectedObjectsToXLSX(selectedObjects) {
       data.push(["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values"]);
       if (response && response.success && response.fields) {
         response.fields.forEach(field => {
+          const mappedFieldType = mapFieldTypeForExport(field.fieldType, field.fieldLength);
           data.push([
             field.fieldLabel,
             field.fieldApiName,
-            field.fieldType,
-            field.fieldLength,
+            mappedFieldType,
+            field.fieldLength ? field.fieldLength : "",
             field.picklistValues
           ]);
         });
@@ -501,51 +511,62 @@ async function exportSelectedObjectsToXLSX(selectedObjects) {
 }
 
 // ---------------------
+// Inline Export Button (Detail Page)
+// ---------------------
+function addInlineExportButton(parentContainer) {
+  if (document.getElementById("exportDetailXLSXButton")) return;
+  
+  const exportButton = document.createElement("button");
+  exportButton.id = "exportDetailXLSXButton";
+  exportButton.textContent = "Export XLSX";
+  exportButton.style.cssText =
+    "background-color: #0070d2; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
+  exportButton.addEventListener("click", exportCurrentObjectFieldsToXLSX);
+  parentContainer.appendChild(exportButton);
+}
+
+// ---------------------
 // Modal for selecting objects to export
 // ---------------------
 async function showExportSelectionModal() {
   try {
+    showSpinner(); // Show spinner while building the modal
     const tableBody = await waitForElement("table tbody");
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     const objects = [];
-    rows.forEach(row => {
+    for (const row of rows) {
       const link = row.querySelector("a");
       if (link && link.href) {
         const match = link.href.match(/(?:ObjectManager\/|\/sObject\/)([^\/]+)/);
         if (match && match[1]) {
-          const objectApiName = decodeURIComponent(match[1]);
+          let identifier = decodeURIComponent(match[1]);
+          let objectApiName = identifier;
+          if (/^[a-zA-Z0-9]{15,18}$/.test(identifier)) {
+            const response = await new Promise(resolve => {
+              chrome.runtime.sendMessage({ type: "fetchCustomObjectApiName", objectId: identifier, origin: window.location.origin }, resolve);
+            });
+            if (response && response.success) {
+              objectApiName = response.apiName;
+            } else {
+              console.error("Failed to fetch custom object API name for modal:", response.error);
+            }
+          }
           const objectLabel = row.querySelector("td")
             ? row.querySelector("td").innerText.trim()
             : objectApiName;
           objects.push({ objectLabel, objectApiName });
         }
       }
-    });
+    }
     // Create modal overlay
     const modal = document.createElement("div");
     modal.id = "exportSelectionModal";
-    modal.style.cssText = `
-      position: fixed; 
-      top: 0; 
-      left: 0; 
-      width: 100%; 
-      height: 100%; 
-      background: rgba(0,0,0,0.5); 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      z-index: 10000;
-    `;
+    modal.style.cssText =
+      "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;";
     
     const container = document.createElement("div");
-    container.style.cssText = `
-      background: white; 
-      padding: 20px; 
-      border-radius: 5px; 
-      max-height: 80%; 
-      overflow-y: auto; 
-      width: 300px;
-    `;
+    container.style.cssText =
+      "background: white; padding: 20px; border-radius: 5px; max-height: 80%; overflow-y: auto; width: 300px;";
     
     const title = document.createElement("h2");
     title.innerText = "Select Objects to Export";
@@ -558,9 +579,11 @@ async function showExportSelectionModal() {
     const toggleBtn = document.createElement("button");
     toggleBtn.innerText = "Select All";
     toggleBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
+    // Updated toggle button event listener to only target visible (filtered) checkboxes:
     toggleBtn.addEventListener("click", () => {
-      const checkboxes = container.querySelectorAll("label > input[type='checkbox']");
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      const checkboxes = Array.from(container.querySelectorAll("label > input[type='checkbox']"))
+        .filter(cb => window.getComputedStyle(cb.parentElement).display !== "none");
+      const allChecked = checkboxes.every(cb => cb.checked);
       checkboxes.forEach(cb => { cb.checked = !allChecked; });
       toggleBtn.innerText = allChecked ? "Select All" : "Deselect All";
     });
@@ -598,13 +621,8 @@ async function showExportSelectionModal() {
     const searchInput = document.createElement("input");
     searchInput.type = "text";
     searchInput.placeholder = "Search objects...";
-    searchInput.style.cssText = `
-      width: 100%; 
-      padding: 5px; 
-      margin-bottom: 10px; 
-      border: 1px solid #ccc; 
-      border-radius: 4px;
-    `;
+    searchInput.style.cssText =
+      "width: 100%; padding: 5px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;";
     searchInput.addEventListener("input", () => {
       const filter = searchInput.value.trim().toLowerCase();
       const labels = container.querySelectorAll("label");
@@ -632,16 +650,8 @@ async function showExportSelectionModal() {
     // Bottom Export Selected
     const bottomExportBtn = document.createElement("button");
     bottomExportBtn.innerText = "Export Selected";
-    bottomExportBtn.style.cssText = `
-      margin-top: 10px; 
-      padding: 5px 10px; 
-      background: #0070d2; 
-      color: white; 
-      border: none; 
-      border-radius: 4px; 
-      cursor: pointer; 
-      width: 100%;
-    `;
+    bottomExportBtn.style.cssText =
+      "margin-top: 10px; padding: 5px 10px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;";
     bottomExportBtn.addEventListener("click", async () => {
       const selectedCheckboxes = container.querySelectorAll("label > input[type='checkbox']:checked");
       const selectedObjects = [];
@@ -658,229 +668,48 @@ async function showExportSelectionModal() {
     container.appendChild(bottomExportBtn);
     
     modal.appendChild(container);
+    hideSpinner(); // Hide spinner once modal is ready
     document.body.appendChild(modal);
   } catch (error) {
     console.error("Error showing export selection modal:", error);
+    hideSpinner();
   }
-}
-
-// ---------------------
-// New Functionality: Missing Field Info Modal
-// ---------------------
-
-// Build a mapping of field labels to their IDs by scanning existing edit links on the page.
-function getFieldIdMapping() {
-  const mapping = {};
-  // Look for anchor elements with href matching the pattern for field edit pages.
-  const anchors = document.querySelectorAll('a[href*="/FieldsAndRelationships/"]');
-  anchors.forEach(anchor => {
-    const match = anchor.href.match(/\/FieldsAndRelationships\/([^\/]+)\/edit/);
-    if (match && match[1]) {
-      const fieldId = match[1];
-      const label = anchor.textContent.trim();
-      if (label) {
-        mapping[label] = fieldId;
-      }
-    }
-  });
-  return mapping;
-}
-
-// Create and display the modal listing fields missing Description or Help Text.
-function showMissingFieldsModal(fields, objectApiName) {
-  // Create an overlay
-  const overlay = document.createElement("div");
-  overlay.id = "missing-fields-modal-overlay";
-  overlay.style.position = "fixed";
-  overlay.style.top = "0";
-  overlay.style.left = "0";
-  overlay.style.width = "100%";
-  overlay.style.height = "100%";
-  overlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-  overlay.style.zIndex = "10000";
-  overlay.style.display = "flex";
-  overlay.style.justifyContent = "center";
-  overlay.style.alignItems = "center";
-
-  // Create the modal container
-  const modal = document.createElement("div");
-  modal.id = "missing-fields-modal";
-  modal.style.backgroundColor = "#fff";
-  modal.style.padding = "20px";
-  modal.style.borderRadius = "5px";
-  modal.style.maxWidth = "600px";
-  modal.style.maxHeight = "80%";
-  modal.style.overflowY = "auto";
-  modal.style.boxShadow = "0 0 10px rgba(0,0,0,0.3)";
-  modal.style.position = "relative";
-
-  // Close button
-  const closeBtn = document.createElement("button");
-  closeBtn.textContent = "Close";
-  closeBtn.style.position = "absolute";
-  closeBtn.style.top = "10px";
-  closeBtn.style.right = "10px";
-  closeBtn.style.cursor = "pointer";
-  closeBtn.addEventListener("click", () => {
-    document.body.removeChild(overlay);
-  });
-  modal.appendChild(closeBtn);
-
-  // Title for the modal
-  const title = document.createElement("h2");
-  title.textContent = "Fields Missing Description or Help Text";
-  title.style.marginTop = "0";
-  modal.appendChild(title);
-
-  // Get mapping from field label to field ID (if available)
-  const fieldIdMapping = getFieldIdMapping();
-
-  if (fields.length === 0) {
-    const noFieldsMsg = document.createElement("p");
-    noFieldsMsg.textContent = "All fields have both Description and Help Text.";
-    modal.appendChild(noFieldsMsg);
-  } else {
-    const list = document.createElement("ul");
-    fields.forEach(field => {
-      const listItem = document.createElement("li");
-      listItem.style.marginBottom = "8px";
-
-      // Check if we have an edit link (based on field label mapping)
-      const fieldId = fieldIdMapping[field.fieldLabel];
-      if (fieldId) {
-        const link = document.createElement("a");
-        link.href = `${window.location.origin}/lightning/setup/ObjectManager/${objectApiName}/FieldsAndRelationships/${fieldId}/edit`;
-        link.textContent = field.fieldLabel;
-        link.target = "_blank";
-        link.style.textDecoration = "underline";
-        link.style.color = "#0070d2";
-        listItem.appendChild(link);
-      } else {
-        const span = document.createElement("span");
-        span.textContent = field.fieldLabel;
-        listItem.appendChild(span);
-      }
-
-      // Indicate which info is missing
-      const missingInfo = [];
-      if (!field.description || !field.description.trim()) missingInfo.push("Description");
-      if (!field.inlineHelpText || !field.inlineHelpText.trim()) missingInfo.push("Help Text");
-
-      const infoSpan = document.createElement("span");
-      infoSpan.style.marginLeft = "10px";
-      infoSpan.style.color = "red";
-      infoSpan.textContent = ` (Missing: ${missingInfo.join(", ")})`;
-      listItem.appendChild(infoSpan);
-
-      list.appendChild(listItem);
-    });
-    modal.appendChild(list);
-  }
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-}
-
-// When the Missing Field Info button is clicked, fetch field describe and show modal.
-function checkMissingFieldInfo() {
-  const objectApiName = getObjectNameFromURL();
-  if (!objectApiName) {
-    alert("Could not determine Object API Name from URL.");
-    return;
-  }
-  chrome.runtime.sendMessage(
-    { type: "fetchObjectDescribe", objectApiName, origin: window.location.origin },
-    response => {
-      if (!response.success) {
-        alert("Error fetching object details: " + response.error);
-        return;
-      }
-      // Filter fields missing Description or Help Text.
-      // Note: This assumes the describe response includes 'description' and 'inlineHelpText' properties.
-      const missingFields = response.fields.filter(field =>
-        (!field.description || !field.description.trim()) ||
-        (!field.inlineHelpText || !field.inlineHelpText.trim())
-      );
-      showMissingFieldsModal(missingFields, objectApiName);
-    }
-  );
-}
-
-// Add the Missing Field Info button to the UI on detail pages.
-function addMissingFieldInfoButton(parentContainer) {
-  if (document.getElementById("missingFieldInfoButton")) return;
-  
-  const btn = document.createElement("button");
-  btn.id = "missingFieldInfoButton";
-  btn.textContent = "Check Missing Field Info";
-  btn.style.cssText = `
-    background-color: #0070d2;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 14px;
-    cursor: pointer;
-    margin-left: 10px;
-  `;
-  btn.addEventListener("click", checkMissingFieldInfo);
-  parentContainer.appendChild(btn);
 }
 
 // ---------------------
 // Main Flow
 // ---------------------
 
-function exportXLSX() {
-  if (isObjectManagerHomePage()) {
-    showExportSelectionModal();
-  } else {
-    exportCurrentObjectFieldsToXLSX();
-  }
-}
-
-let lastObjectName = null;
-
-function initPicklistProcessing() {
-  // Only run on Setup pages
+async function initPicklistProcessing() {
   if (!window.location.pathname.includes("/lightning/setup/")) return;
   
-  // Home Page
   if (isObjectManagerHomePage()) {
     (async () => {
       try {
-        // Wait for the object list container
         const tableBody = await waitForElement("table tbody");
         const scrollable = findScrollableParent(tableBody);
         if (scrollable) {
           await autoScrollAndWait(scrollable);
           console.log("Auto scrolling finished for home page.");
         }
-        // Setup Quick Find
         const container = await waitForElement(".objectManagerGlobalSearchBox, div[role='search']");
         container.style.display = "flex";
         container.style.alignItems = "center";
-        container.style.justifyContent = "flex-start";
+        container.style.justifyContent = "flex-end";
         let input = container.querySelector("input[type='search']");
         if (input) {
           setupCustomQuickFind(input);
         }
-        // Add the "Select Objects to Export" button if needed
         if (!document.getElementById("exportSelectionButton")) {
           const selectionButton = document.createElement("button");
           selectionButton.id = "exportSelectionButton";
           selectionButton.textContent = "Select Objects to Export";
-          selectionButton.style.cssText = `
-            background-color: #0070d2; 
-            color: white; 
-            border: none; 
-            border-radius: 4px; 
-            padding: 5px 10px; 
-            font-size: 14px; 
-            cursor: pointer; 
-            margin-left: 10px;
-          `;
-          selectionButton.addEventListener("click", showExportSelectionModal);
+          selectionButton.style.cssText =
+            "background-color: #0070d2; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
+          // Wrap the call in an async function to show spinner while modal loads.
+          selectionButton.addEventListener("click", async () => {
+            await showExportSelectionModal();
+          });
           container.appendChild(selectionButton);
         }
         console.log("Home page initialization complete.");
@@ -891,16 +720,15 @@ function initPicklistProcessing() {
     return;
   }
   
-  // Detail Page (Fields & Relationships)
   removeSetupHomeModules();
-  const objectName = getObjectNameFromURL();
-  if (lastObjectName && lastObjectName !== objectName) {
-    const existing = document.getElementById("customQuickFind");
-    if (existing) existing.remove();
-  }
-  lastObjectName = objectName;
-  
   (async () => {
+    const objectName = await getObjectApiNameFromURL();
+    if (objectName && lastObjectName && lastObjectName !== objectName) {
+      const existing = document.getElementById("customQuickFind");
+      if (existing) existing.remove();
+    }
+    lastObjectName = objectName;
+  
     let originalQuickFind;
     try {
       originalQuickFind = await getOriginalQuickFind();
@@ -909,7 +737,6 @@ function initPicklistProcessing() {
       console.warn("Quick Find not found, will use fallback if on FieldsAndRelationships page.");
     }
     try {
-      // Wait for the table, then find a scrollable parent
       const tableBody = await waitForElement("table tbody");
       const scrollable = findScrollableParent(tableBody);
       if (scrollable) {
@@ -917,11 +744,9 @@ function initPicklistProcessing() {
         console.log("Auto scrolling finished on detail page.");
       }
       
-      // If Quick Find is present, set it up. Otherwise, fallback only if we're on FieldsAndRelationships
       if (originalQuickFind) {
         setupCustomQuickFind(originalQuickFind);
       } else if (window.location.pathname.includes("FieldsAndRelationships")) {
-        // Fallback: place a normal button (not fixed in top-right) in a header or near the table
         if (!document.getElementById("exportDetailXLSXButton")) {
           const fallbackContainer = document.querySelector(".objectManagerGlobalSearchBox, div[role='search']") 
                                 || document.querySelector(".setupHeader, .header") 
@@ -929,25 +754,15 @@ function initPicklistProcessing() {
           const exportButton = document.createElement("button");
           exportButton.id = "exportDetailXLSXButton";
           exportButton.textContent = "Export XLSX";
-          exportButton.style.cssText = `
-            background-color: #0070d2; 
-            color: white; 
-            border: none; 
-            border-radius: 4px; 
-            padding: 5px 10px; 
-            font-size: 14px; 
-            cursor: pointer; 
-            margin-left: 10px;
-          `;
+          exportButton.style.cssText =
+            "background-color: #0070d2; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 14px; cursor: pointer; margin-left: 10px;";
           exportButton.addEventListener("click", exportCurrentObjectFieldsToXLSX);
           fallbackContainer.appendChild(exportButton);
         }
       }
       
-      // Process picklist rows
       processPicklistRows();
       
-      // Watch for new rows added dynamically
       const observer = new MutationObserver(mutations => {
         if (mutations.some(m => m.addedNodes.length)) {
           processPicklistRows();
@@ -962,7 +777,8 @@ function initPicklistProcessing() {
   })();
 }
 
-// Listen for location-changed from background
+let lastObjectName = null;
+
 window.addEventListener("location-changed", () => {
   console.log("location-changed event detected.");
   lastObjectName = null;
@@ -977,13 +793,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Initialize
 initPicklistProcessing().catch(console.error);
-
-// If Quick Find is never found, add a fallback button
-setTimeout(() => {
-  if (!document.getElementById("customQuickFind")) {
-    console.warn("Quick Find not initialized; adding fallback button.");
-    addFallbackButton();
-  }
-}, 3000);
