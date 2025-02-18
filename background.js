@@ -2,26 +2,22 @@
 * @File Name : background.js
 * @Description : Handles session cookie retrieval, picklist and object describe fetching via Salesforce API.
 * @Author : Dave Moudy
-* @Last Modified By : Dave Moudy
-* @Last Modified On : February 18,2025
+* @Last Modified By :
+* @Last Modified On :
 * @Modification Log :
 *==============================================================================
 * Ver | Date         | Author    | Modification
 *==============================================================================
 * 1.0 | February 16,2025 |         | Initial Version
 * 1.1 | February 18,2025 | Dave Moudy | Updated URL conversion to support dev orgs
-* 1.2 | February 18,2025 | Dave Moudy | Fixed URL conversion for sandbox my.salesforce-setup domains
+* 1.2 | February 20,2025 | Dave Moudy | Added fetchCustomObjectApiName to retrieve API name for custom objects
 **/
 
 // Helper to convert a Lightning URL into its My Salesforce domain.
 function getMySalesforceDomain(origin) {
-  if (origin.includes("my.salesforce-setup.com")) {
-    return origin.replace("my.salesforce-setup.com", "my.salesforce.com");
-  }
   if (origin.includes("lightning.force.com")) {
     return origin.replace("lightning.force.com", "my.salesforce.com");
-  }
-  if (origin.includes("salesforce-setup.com")) {
+  } else if (origin.includes("salesforce-setup.com")) {
     return origin.replace("salesforce-setup.com", "my.salesforce.com");
   }
   return origin;
@@ -52,7 +48,7 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${sessionId}`
+          "Authorization": "Bearer " + sessionId
         }
       });
       if (!response.ok) throw new Error(`Describe API error: ${response.statusText}`);
@@ -68,7 +64,7 @@ async function fetchPicklistValues({ objectName, fieldApiName, origin, isStandar
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${sessionId}`
+          "Authorization": "Bearer " + sessionId
         }
       });
       if (!response.ok) throw new Error(`Tooling API error: ${response.statusText}`);
@@ -93,7 +89,7 @@ async function fetchObjectDescribe({ objectApiName, origin }) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${sessionId}`
+        "Authorization": "Bearer " + sessionId
       }
     });
     if (!response.ok) throw new Error(`Describe API error: ${response.statusText}`);
@@ -114,6 +110,34 @@ async function fetchObjectDescribe({ objectApiName, origin }) {
   }
 }
 
+// New function to fetch custom object API name using the Tooling API.
+async function fetchCustomObjectApiName(objectId, origin) {
+  const sessionId = await getSessionCookie(origin);
+  if (!sessionId) return { success: false, error: "No session cookie found." };
+  const apiOrigin = getMySalesforceDomain(origin);
+  const query = `SELECT DeveloperName FROM CustomObject WHERE Id = '${objectId}'`;
+  const url = `${apiOrigin}/services/data/v56.0/tooling/query/?q=${encodeURIComponent(query)}`;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + sessionId
+      }
+    });
+    if (!response.ok) throw new Error(`Tooling API error: ${response.statusText}`);
+    const data = await response.json();
+    if (data.records && data.records.length > 0) {
+      const developerName = data.records[0].DeveloperName;
+      return { success: true, apiName: developerName + "__c" };
+    } else {
+      return { success: false, error: "No records found" };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "fetchPicklistValues") {
     fetchPicklistValues(message)
@@ -123,6 +147,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "fetchObjectDescribe") {
     fetchObjectDescribe(message)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.toString() }));
+    return true;
+  }
+  if (message.type === "fetchCustomObjectApiName") {
+    fetchCustomObjectApiName(message.objectId, message.origin)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ success: false, error: error.toString() }));
     return true;
