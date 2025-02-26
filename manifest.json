@@ -1,28 +1,55 @@
 {
   "manifest_version": 3,
   "name": "Salesforce Field Search Helper",
-  "version": "2.0",
-  "description": "Replaces Quick Find and exports to excel",
+  "version": "3.1",
+  "description": "Enhances Quick Find, exports to Excel, and provides bulk updates for custom fields",
   "permissions": [
     "cookies",
     "webNavigation"
   ],
   "host_permissions": [
     "https://*.salesforce.com/*",
+    "https://*.salesforce-setup.com/*",
     "https://*.lightning.force.com/*",
     "https://*.my.salesforce.com/*",
     "https://*.sandbox.my.salesforce.com/*",
     "https://*.sandbox.lightning.force.com/*",
-    "https://*.salesforce-setup.com/*"
+    "https://*.force.com/*",
+    "https://*.cloudforce.com/*",
+    "https://*.visualforce.com/*",
+    "https://*.vf.force.com/*",
+    "https://*.salesforce.mil/*",
+    "https://*.cloudforce.mil/*",
+    "https://*.visualforce.mil/*",
+    "https://*.crmforce.mil/*",
+    "https://*.builder.salesforce-experience.com/*",
+    "https://*.sfcrmapps.cn/*",
+    "https://*.sfcrmproducts.cn/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": [
+        "https://*.salesforce.com/*",
+        "https://*.salesforce-setup.com/*",
         "https://*.lightning.force.com/lightning/setup/*",
-        "https://*.salesforce-setup.com/lightning/setup/*"
+        "https://*.my.salesforce.com/*",
+        "https://*.sandbox.my.salesforce.com/*",
+        "https://*.sandbox.lightning.force.com/*",
+        "https://*.force.com/*",
+        "https://*.cloudforce.com/*",
+        "https://*.visualforce.com/*",
+        "https://*.vf.force.com/*",
+        "https://*.salesforce.mil/*",
+        "https://*.cloudforce.mil/*",
+        "https://*.visualforce.mil/*",
+        "https://*.crmforce.mil/*",
+        "https://*.builder.salesforce-experience.com/*",
+        "https://*.sfcrmapps.cn/*",
+        "https://*.sfcrmproducts.cn/*"
       ],
       "js": [
         "xlsx.full.min.js",
