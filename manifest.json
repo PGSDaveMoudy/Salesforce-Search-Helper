@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Salesforce Field Search Helper",
-  "version": "3.1",
+  "version": "6.0",
   "description": "Enhances Quick Find, exports to Excel, and provides bulk updates for custom fields",
   "permissions": [
     "cookies",
