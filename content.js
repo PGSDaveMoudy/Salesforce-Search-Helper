@@ -13,12 +13,51 @@ async function getSessionCookie(origin, storeId) {
 
 // Helper to get the correct Salesforce domain
 function getMySalesforceDomain(origin) {
-  if (origin.includes("lightning.force.com")) {
-    return origin.replace("lightning.force.com", "my.salesforce.com");
-  } else if (origin.includes("salesforce-setup.com")) {
-    return origin.replace("salesforce-setup.com", "my.salesforce.com");
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname;
+    
+    // Check if already a my.salesforce.com domain to avoid duplication
+    if (hostname.includes(".my.salesforce.com")) {
+      return origin;
+    }
+    
+    // Handle sandbox domains with care to avoid duplicate "my"
+    if (hostname.includes("sandbox.my.")) {
+      // If it's a salesforce-setup domain, transform it carefully
+      if (hostname.includes("salesforce-setup.com")) {
+        // Replace salesforce-setup with salesforce, but keep the "sandbox.my" part intact
+        return origin.replace("salesforce-setup.com", "salesforce.com");
+      }
+      // Already has "my" after "sandbox", don't add another one
+      return origin;
+    }
+    
+    // Check for sandbox pattern
+    const sandboxMatch = hostname.match(/([^-]+)--([^.]+)\.(.*)/);
+    if (sandboxMatch && (hostname.includes("sandbox") || hostname.includes("--"))) {
+      // For sandbox domains, be extra careful
+      console.log("Sandbox domain detected:", origin);
+      if (hostname.includes("lightning.force.com")) {
+        const orgName = sandboxMatch[1];
+        const sandboxName = sandboxMatch[2];
+        return `${url.protocol}//${orgName}--${sandboxName}.my.salesforce.com`;
+      }
+      return origin;
+    }
+    
+    // Standard transformations
+    if (hostname.includes("lightning.force.com")) {
+      return origin.replace("lightning.force.com", "my.salesforce.com");
+    } else if (hostname.includes("salesforce-setup.com")) {
+      return origin.replace("salesforce-setup.com", "my.salesforce.com");
+    }
+    
+    return origin;
+  } catch (e) {
+    console.error("Error in getMySalesforceDomain:", e);
+    return origin;
   }
-  return origin;
 }
 
 function waitForElement(selector, timeout = 10000) {
@@ -643,7 +682,32 @@ async function showExportSelectionModal() {
   }
 }
 
+// Add CSS to document head for field highlighting
+function addHighlightStyles() {
+  if (document.getElementById('fieldHighlightStyles')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'fieldHighlightStyles';
+  style.textContent = `
+    .field-modified {
+      background-color: #faffbd !important;
+      border: 1px solid #e0c517 !important;
+    }
+    .changes-count {
+      background-color: #0070d2;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 12px;
+      margin-left: 5px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function showBulkUpdateModal(fields) {
+  addHighlightStyles();
+  
   const modal = document.createElement("div");
   modal.id = "bulkUpdateModal";
   modal.style.cssText = "position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;";
@@ -655,12 +719,21 @@ function showBulkUpdateModal(fields) {
   const infoSection = document.createElement("div");
   infoSection.style.cssText = "margin: 10px 0; padding: 10px; border-radius: 4px; background-color: #e8f4f8; color: #0070d2;";
   infoSection.innerHTML = `<p><strong>Instructions:</strong> Update the description and help text for custom fields. Click "Save Changes" when done.</p>
-    <p><strong>Note:</strong> Picklist, lookup, and master-detail fields now have a special update method to avoid metadata errors.</p>`;
+    <p><strong>Note:</strong> Picklist, lookup, and master-detail fields now have a special update method to avoid metadata errors.</p>
+    <p><strong>Tip:</strong> Modified fields will be highlighted in yellow.</p>`;
   container.appendChild(infoSection);
   const statusArea = document.createElement("div");
   statusArea.id = "bulkUpdateStatus";
   statusArea.style.cssText = "margin: 10px 0; padding: 10px; border-radius: 4px; display: none;";
   container.appendChild(statusArea);
+  
+  // Add changes counter
+  const changesCounter = document.createElement("div");
+  changesCounter.id = "changesCounter";
+  changesCounter.style.cssText = "margin: 10px 0; display: flex; align-items: center;";
+  changesCounter.innerHTML = "<strong>Changes:</strong> <span id='changesCount'>0</span>";
+  container.appendChild(changesCounter);
+  
   const filterSection = document.createElement("div");
   filterSection.style.cssText = "margin: 10px 0; padding: 8px; background-color: #f5f5f5; border-radius: 4px;";
   const filterLabel = document.createElement("label");
@@ -678,6 +751,13 @@ function showBulkUpdateModal(fields) {
   picklistFilter.style.cssText = "margin-right: 15px; cursor: pointer;";
   picklistFilter.innerHTML = `<input type="radio" name="fieldFilter" value="picklist"> Picklist/Lookup`;
   filterSection.appendChild(picklistFilter);
+  
+  // Add filter for modified fields
+  const modifiedFilter = document.createElement("label");
+  modifiedFilter.style.cssText = "margin-left: 15px; cursor: pointer;";
+  modifiedFilter.innerHTML = `<input type="radio" name="fieldFilter" value="modified"> Modified Only`;
+  filterSection.appendChild(modifiedFilter);
+  
   container.appendChild(filterSection);
   const headerRow = document.createElement("div");
   headerRow.style.cssText = "display: grid; grid-template-columns: 35% 32.5% 32.5%; margin-bottom: 10px; font-weight: bold; background-color: #f5f5f5; padding: 8px;";
@@ -697,10 +777,32 @@ function showBulkUpdateModal(fields) {
     const type = fieldType.toLowerCase();
     return ['picklist', 'multipicklist', 'lookup', 'reference', 'master-detail', 'hierarchyid'].includes(type) ? 'picklist' : 'standard';
   };
+  
+  // Track changes count
+  let changesCount = 0;
+  const updateChangesCount = () => {
+    document.getElementById('changesCount').textContent = changesCount;
+    // Add or remove badge class based on count
+    if (changesCount > 0) {
+      if (!document.getElementById('changesCountBadge')) {
+        const badge = document.createElement('span');
+        badge.id = 'changesCountBadge';
+        badge.className = 'changes-count';
+        badge.textContent = changesCount;
+        document.getElementById('changesCounter').appendChild(badge);
+      } else {
+        document.getElementById('changesCountBadge').textContent = changesCount;
+      }
+    } else if (document.getElementById('changesCountBadge')) {
+      document.getElementById('changesCountBadge').remove();
+    }
+  };
+  
   fields.forEach(field => {
     const fieldCategory = getFieldCategory(field.fieldType);
     const fieldContainer = document.createElement("div");
     fieldContainer.dataset.fieldType = fieldCategory;
+    fieldContainer.dataset.modified = "false";
     fieldContainer.style.cssText = "display: grid; grid-template-columns: 35% 32.5% 32.5%; padding: 8px; border-bottom: 1px solid #eee;";
     const fieldInfo = document.createElement("div");
     const specialFieldIndicator = fieldCategory === 'picklist' ? 
@@ -717,6 +819,7 @@ function showBulkUpdateModal(fields) {
     descInput.dataset.fieldType = "description";
     descInput.dataset.apiName = field.fieldApiName;
     descInput.dataset.category = fieldCategory;
+    descInput.dataset.originalValue = field.currentDescription || "";
     descInput.rows = 2;
     descInput.style.cssText = "width: 95%; resize: vertical;";
     descWrapper.appendChild(descInput);
@@ -729,12 +832,57 @@ function showBulkUpdateModal(fields) {
     helpInput.dataset.fieldType = "helpText";
     helpInput.dataset.apiName = field.fieldApiName;
     helpInput.dataset.category = fieldCategory;
+    helpInput.dataset.originalValue = field.currentHelpText || "";
     helpInput.rows = 2;
     helpInput.style.cssText = "width: 95%; resize: vertical;";
     helpWrapper.appendChild(helpInput);
     fieldContainer.appendChild(helpWrapper);
     form.appendChild(fieldContainer);
+
+    // Add change detection to inputs
+    descInput.addEventListener('input', function() {
+      const isModified = this.value !== this.dataset.originalValue;
+      if (isModified && !this.classList.contains('field-modified')) {
+        this.classList.add('field-modified');
+        if (fieldContainer.dataset.descModified !== 'true') {
+          fieldContainer.dataset.descModified = 'true';
+          changesCount++;
+          updateChangesCount();
+        }
+      } else if (!isModified && this.classList.contains('field-modified')) {
+        this.classList.remove('field-modified');
+        fieldContainer.dataset.descModified = 'false';
+        changesCount--;
+        updateChangesCount();
+      }
+      
+      // Update parent container modified state for filtering
+      const helpIsModified = helpInput.value !== helpInput.dataset.originalValue;
+      fieldContainer.dataset.modified = (isModified || helpIsModified) ? 'true' : 'false';
+    });
+
+    helpInput.addEventListener('input', function() {
+      const isModified = this.value !== this.dataset.originalValue;
+      if (isModified && !this.classList.contains('field-modified')) {
+        this.classList.add('field-modified');
+        if (fieldContainer.dataset.helpModified !== 'true') {
+          fieldContainer.dataset.helpModified = 'true';
+          changesCount++;
+          updateChangesCount();
+        }
+      } else if (!isModified && this.classList.contains('field-modified')) {
+        this.classList.remove('field-modified');
+        fieldContainer.dataset.helpModified = 'false';
+        changesCount--;
+        updateChangesCount();
+      }
+      
+      // Update parent container modified state for filtering
+      const descIsModified = descInput.value !== descInput.dataset.originalValue;
+      fieldContainer.dataset.modified = (isModified || descIsModified) ? 'true' : 'false';
+    });
   });
+  
   container.appendChild(form);
   const filterInputs = filterSection.querySelectorAll('input[name="fieldFilter"]');
   filterInputs.forEach(input => {
@@ -742,10 +890,15 @@ function showBulkUpdateModal(fields) {
       const filterValue = e.target.value;
       const fieldContainers = form.querySelectorAll('div[data-field-type]');
       fieldContainers.forEach(container => {
-        container.style.display = (filterValue === 'all' || container.dataset.fieldType === filterValue) ? 'grid' : 'none';
+        if (filterValue === 'modified') {
+          container.style.display = container.dataset.modified === 'true' ? 'grid' : 'none';
+        } else {
+          container.style.display = (filterValue === 'all' || container.dataset.fieldType === filterValue) ? 'grid' : 'none';
+        }
       });
     });
   });
+  
   const btnContainer = document.createElement("div");
   btnContainer.style.cssText = "margin-top: 15px; display: flex; justify-content: space-between;";
   const infoText = document.createElement("div");
@@ -769,18 +922,19 @@ function showBulkUpdateModal(fields) {
     inputs.forEach(input => {
       const fieldId = input.dataset.fieldId;
       const apiName = input.dataset.apiName;
-      if (!updates[fieldId]) updates[fieldId] = {};
-      if (input.dataset.fieldType === "description") {
-        updates[fieldId].Description = input.value;
-        const originalField = fields.find(f => f.fieldId === fieldId);
-        if (originalField && input.value !== (originalField.currentDescription || "")) {
+      const originalValue = input.dataset.originalValue || "";
+      const currentValue = input.value;
+      
+      // Only add to updates if the value has changed
+      if (currentValue !== originalValue) {
+        if (!updates[fieldId]) updates[fieldId] = {};
+        
+        if (input.dataset.fieldType === "description") {
+          updates[fieldId].Description = currentValue;
           changeCount++;
           console.log(`Field ${apiName} description changed`);
-        }
-      } else if (input.dataset.fieldType === "helpText") {
-        updates[fieldId].InlineHelpText = input.value;
-        const originalField = fields.find(f => f.fieldId === fieldId);
-        if (originalField && input.value !== (originalField.currentHelpText || "")) {
+        } else if (input.dataset.fieldType === "helpText") {
+          updates[fieldId].InlineHelpText = currentValue;
           changeCount++;
           console.log(`Field ${apiName} help text changed`);
         }
