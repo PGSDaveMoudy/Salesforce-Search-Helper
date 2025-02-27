@@ -25,7 +25,6 @@ function waitForElement(selector, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const el = document.querySelector(selector);
     if (el) return resolve(el);
-
     const observer = new MutationObserver((mutations, obs) => {
       const el = document.querySelector(selector);
       if (el) {
@@ -33,9 +32,7 @@ function waitForElement(selector, timeout = 10000) {
         resolve(el);
       }
     });
-
     observer.observe(document.body, { childList: true, subtree: true });
-
     setTimeout(() => {
       observer.disconnect();
       reject(new Error(`Timeout waiting for element: ${selector}`));
@@ -75,15 +72,13 @@ function autoScrollAndWait(container, delay = 500, stableIterations = 3, initial
 }
 
 async function getObjectApiNameFromURL() {
-  const match = window.location.pathname.match(/(?:ObjectManager|\/sObject\/)([^\/]+)/);
+  const match = window.location.pathname.match(/(?:ObjectManager\/|\/sObject\/)([^\/]+)/);
   let identifier = match && match[1] ? decodeURIComponent(match[1]) : null;
   if (!identifier) return null;
-
   if (/^[a-zA-Z0-9]{15,18}$/.test(identifier)) {
     const response = await new Promise(resolve => {
       chrome.runtime.sendMessage({ type: "fetchCustomObjectApiName", objectId: identifier, origin: window.location.origin }, resolve);
     });
-
     if (response && response.success) {
       window.customObjectId = identifier;
       return response.apiName;
@@ -108,11 +103,9 @@ async function exportCurrentObjectFieldsToXLSX() {
   try {
     const objectName = await getObjectApiNameFromURL();
     if (!objectName) throw new Error("Object name not determined.");
-
     const response = await new Promise(resolve => {
       chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: objectName, origin: window.location.origin }, resolve);
     });
-
     let data = [["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values", "Formula", "Help", "Description"]];
     if (response && response.success && response.fields) {
       response.fields.forEach(field => {
@@ -129,12 +122,10 @@ async function exportCurrentObjectFieldsToXLSX() {
         ]);
       });
     }
-
     let wb = XLSX.utils.book_new();
     const sheetName = objectName.length > 31 ? objectName.substring(0, 31) : objectName;
     let ws = XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const a = document.createElement("a");
@@ -159,7 +150,6 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
       console.error("No objects found on the home page.");
       return;
     }
-
     const objects = [];
     for (const row of rows) {
       const link = row.querySelector("a");
@@ -183,7 +173,7 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
         }
       }
     }
-
+    
     let wb = XLSX.utils.book_new();
     if (exportMode === "tabs") {
       const usedSheetNames = [];
@@ -191,7 +181,6 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
         const response = await new Promise(resolve => {
           chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: obj.objectApiName, origin: window.location.origin }, resolve);
         });
-
         let data = [["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values", "Formula", "Help", "Description"]];
         if (response && response.success && response.fields) {
           response.fields.forEach(field => {
@@ -210,12 +199,10 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
         } else {
           data.push([obj.objectLabel, obj.objectApiName, "Error fetching fields", "", "", "", "", ""]);
         }
-
         let sheetName = obj.objectLabel;
         sheetName = sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName;
         sheetName = getUniqueSheetName(sheetName, usedSheetNames);
         usedSheetNames.push(sheetName);
-
         let ws = XLSX.utils.aoa_to_sheet(data);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
@@ -225,7 +212,6 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
         const response = await new Promise(resolve => {
           chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: obj.objectApiName, origin: window.location.origin }, resolve);
         });
-
         if (response && response.success && response.fields) {
           response.fields.forEach(field => {
             const mappedFieldType = mapFieldTypeForExport(field.fieldType, field.fieldLength);
@@ -245,11 +231,9 @@ async function exportFullDatabaseToXLSX(exportMode = "tabs") {
           data.push([obj.objectLabel, "Error fetching fields", "", "", "", "", "", "", ""]);
         }
       }
-
       let ws = XLSX.utils.aoa_to_sheet(data);
       XLSX.utils.book_append_sheet(wb, ws, "Export");
     }
-
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const a = document.createElement("a");
@@ -277,7 +261,6 @@ async function exportSelectedObjectsToXLSX(selectedObjects, exportMode = "tabs")
         const response = await new Promise(resolve => {
           chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: obj.objectApiName, origin: window.location.origin }, resolve);
         });
-
         let data = [["Field Label", "API Name", "Field Type", "Field Length", "Picklist Values", "Formula", "Help", "Description"]];
         if (response && response.success && response.fields) {
           response.fields.forEach(field => {
@@ -296,12 +279,10 @@ async function exportSelectedObjectsToXLSX(selectedObjects, exportMode = "tabs")
         } else {
           data.push([obj.objectLabel, obj.objectApiName, "Error fetching fields", "", "", "", "", ""]);
         }
-
         let sheetName = obj.objectLabel;
         sheetName = sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName;
         sheetName = getUniqueSheetName(sheetName, usedSheetNames);
         usedSheetNames.push(sheetName);
-
         let ws = XLSX.utils.aoa_to_sheet(data);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
@@ -311,7 +292,6 @@ async function exportSelectedObjectsToXLSX(selectedObjects, exportMode = "tabs")
         const response = await new Promise(resolve => {
           chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: obj.objectApiName, origin: window.location.origin }, resolve);
         });
-
         if (response && response.success && response.fields) {
           response.fields.forEach(field => {
             const mappedFieldType = mapFieldTypeForExport(field.fieldType, field.fieldLength);
@@ -331,11 +311,9 @@ async function exportSelectedObjectsToXLSX(selectedObjects, exportMode = "tabs")
           data.push([obj.objectLabel, "Error fetching fields", "", "", "", "", "", "", ""]);
         }
       }
-
       let ws = XLSX.utils.aoa_to_sheet(data);
       XLSX.utils.book_append_sheet(wb, ws, "Export");
     }
-
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const a = document.createElement("a");
@@ -366,12 +344,10 @@ function setupCustomQuickFind(originalInput) {
     console.error("Original Quick Find input issue.");
     return;
   }
-
   if (originalInput.dataset.customized === "true") {
     console.log("Custom Quick Find already set up.");
     return;
   }
-
   const newInput = originalInput.cloneNode(true);
   newInput.id = "customQuickFind";
   newInput.dataset.customized = "true";
@@ -379,7 +355,6 @@ function setupCustomQuickFind(originalInput) {
   newInput.parentNode.style.cssText = "display: flex; justify-content: flex-end; align-items: center;";
   newInput.addEventListener("input", onQuickFindInput);
   console.log("Custom Quick Find attached.");
-
   if (!isObjectManagerHomePage()) {
     addInlineExportButton(newInput.parentNode);
   }
@@ -389,18 +364,15 @@ function onQuickFindInput(e) {
   const query = e.target.value.trim().toLowerCase();
   const tableBody = document.querySelector("table tbody");
   if (!tableBody) return;
-
   const rows = tableBody.querySelectorAll("tr");
   rows.forEach(row => {
     const cells = row.querySelectorAll("td");
     if (cells.length < 3) return;
-
     const fieldLabel = cells[0].innerText.toLowerCase();
     const apiName = cells[1].innerText.toLowerCase();
     const fieldType = cells[2].innerText.toLowerCase();
     const picklistText = row.dataset.picklistText ? row.dataset.picklistText.toLowerCase() : "";
     const combined = fieldLabel + " " + picklistText;
-
     row.style.display = (query === "" || combined.includes(query) || apiName.includes(query) || fieldType.includes(query)) ? "" : "none";
   });
 }
@@ -428,24 +400,19 @@ function fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStand
 async function processPicklistRows() {
   const tableBody = document.querySelector("table tbody");
   if (!tableBody) return;
-
   const objectName = await getObjectApiNameFromURL();
   if (!objectName) {
     console.error("Could not determine object name.");
     return;
   }
-
   const rows = tableBody.querySelectorAll("tr");
   rows.forEach(row => {
     if (row.dataset.picklistFetched === "true") return;
-
     const cells = row.querySelectorAll("td");
     if (cells.length < 3) return;
-
     const fieldType = cells[2].innerText.toLowerCase();
     const fieldApiName = cells[1].innerText.trim();
     const isStandard = !fieldApiName.endsWith("__c");
-
     if (fieldType.includes("picklist")) {
       fetchPicklistValuesViaBackground(row, objectName, fieldApiName, isStandard);
     } else {
@@ -474,7 +441,6 @@ function showSpinner() {
   spinner.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999;";
   spinner.innerHTML = '<div class="spinner"></div>';
   document.body.appendChild(spinner);
-
   if (!document.getElementById("spinnerStyles")) {
     const style = document.createElement("style");
     style.id = "spinnerStyles";
@@ -516,7 +482,6 @@ async function showExportSelectionModal() {
     const tableBody = await waitForElement("table tbody");
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     const objects = [];
-
     for (const row of rows) {
       const link = row.querySelector("a");
       if (link && link.href) {
@@ -536,21 +501,18 @@ async function showExportSelectionModal() {
         }
       }
     }
-
+    
     const modal = document.createElement("div");
     modal.id = "exportSelectionModal";
     modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;";
-
     const container = document.createElement("div");
     container.style.cssText = "background: white; padding: 20px; border-radius: 5px; max-height: 80%; overflow-y: auto; width: 300px;";
-
     const title = document.createElement("h2");
     title.innerText = "Select Objects to Export";
     container.appendChild(title);
-
+    
     const topButtonContainer = document.createElement("div");
     topButtonContainer.style.cssText = "display: flex; justify-content: space-between; margin-bottom: 10px;";
-
     const topExportBtn = document.createElement("button");
     topExportBtn.innerText = "Export Selected";
     topExportBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
@@ -568,21 +530,18 @@ async function showExportSelectionModal() {
       document.body.removeChild(modal);
       await exportSelectedObjectsToXLSX(selectedObjects, exportMode);
     });
-
     const topCloseBtn = document.createElement("button");
     topCloseBtn.innerText = "Close";
     topCloseBtn.style.cssText = "padding: 5px; background: #aaa; color: white; border: none; border-radius: 4px; cursor: pointer;";
     topCloseBtn.addEventListener("click", () => {
       document.body.removeChild(modal);
     });
-
     topButtonContainer.appendChild(topExportBtn);
     topButtonContainer.appendChild(topCloseBtn);
     container.appendChild(topButtonContainer);
-
+    
     const selectionButtonsContainer = document.createElement("div");
     selectionButtonsContainer.style.cssText = "display: flex; justify-content: space-between; margin-bottom: 10px;";
-
     const toggleFilteredBtn = document.createElement("button");
     toggleFilteredBtn.innerText = "Toggle Filtered";
     toggleFilteredBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
@@ -592,7 +551,6 @@ async function showExportSelectionModal() {
       const allChecked = checkboxes.every(cb => cb.checked);
       checkboxes.forEach(cb => { cb.checked = !allChecked; });
     });
-
     const selectStandardBtn = document.createElement("button");
     selectStandardBtn.innerText = "Select Standard";
     selectStandardBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
@@ -601,7 +559,6 @@ async function showExportSelectionModal() {
         .filter(cb => window.getComputedStyle(cb.parentElement).display !== "none");
       checkboxes.forEach(cb => { cb.checked = !cb.value.endsWith("__c"); });
     });
-
     const selectCustomBtn = document.createElement("button");
     selectCustomBtn.innerText = "Select Custom";
     selectCustomBtn.style.cssText = "padding: 5px; background: #0070d2; color: white; border: none; border-radius: 4px; cursor: pointer;";
@@ -610,12 +567,11 @@ async function showExportSelectionModal() {
         .filter(cb => window.getComputedStyle(cb.parentElement).display !== "none");
       checkboxes.forEach(cb => { cb.checked = cb.value.endsWith("__c"); });
     });
-
     selectionButtonsContainer.appendChild(toggleFilteredBtn);
     selectionButtonsContainer.appendChild(selectStandardBtn);
     selectionButtonsContainer.appendChild(selectCustomBtn);
     container.appendChild(selectionButtonsContainer);
-
+    
     const exportModeContainer = document.createElement("div");
     exportModeContainer.style.marginBottom = "10px";
     exportModeContainer.innerHTML = `
@@ -623,7 +579,7 @@ async function showExportSelectionModal() {
       <label style="margin-left: 10px;"><input type="radio" name="exportMode" value="single"> Single Sheet</label>
     `;
     container.appendChild(exportModeContainer);
-
+    
     const searchInput = document.createElement("input");
     searchInput.type = "text";
     searchInput.placeholder = "Search objects...";
@@ -637,7 +593,7 @@ async function showExportSelectionModal() {
       });
     });
     container.appendChild(searchInput);
-
+    
     objects.forEach(obj => {
       const label = document.createElement("label");
       label.style.cssText = "display: block; margin-bottom: 5px;";
@@ -648,7 +604,7 @@ async function showExportSelectionModal() {
       label.appendChild(document.createTextNode(" " + obj.objectLabel));
       container.appendChild(label);
     });
-
+    
     const btnContainer = document.createElement("div");
     btnContainer.style.cssText = "display: flex; justify-content: space-between; margin-bottom: 10px;";
     const headerExportBtn = document.createElement("button");
@@ -668,7 +624,6 @@ async function showExportSelectionModal() {
       document.body.removeChild(modal);
       await exportSelectedObjectsToXLSX(selectedObjects, exportMode);
     });
-
     const headerCancelBtn = document.createElement("button");
     headerCancelBtn.innerText = "Cancel";
     headerCancelBtn.style.cssText = "padding: 5px; background: #aaa; color: white; border: none; border-radius: 4px; cursor: pointer;";
@@ -678,7 +633,7 @@ async function showExportSelectionModal() {
     btnContainer.appendChild(headerExportBtn);
     btnContainer.appendChild(headerCancelBtn);
     container.appendChild(btnContainer);
-
+    
     modal.appendChild(container);
     hideSpinner();
     document.body.appendChild(modal);
@@ -692,48 +647,38 @@ function showBulkUpdateModal(fields) {
   const modal = document.createElement("div");
   modal.id = "bulkUpdateModal";
   modal.style.cssText = "position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;";
-
   const container = document.createElement("div");
   container.style.cssText = "background: white; padding: 20px; border-radius: 5px; max-height:80%; overflow-y: auto; width:700px;";
-
   const title = document.createElement("h2");
   title.innerText = "Bulk Update Custom Field Descriptions & Help Text";
   container.appendChild(title);
-
   const infoSection = document.createElement("div");
   infoSection.style.cssText = "margin: 10px 0; padding: 10px; border-radius: 4px; background-color: #e8f4f8; color: #0070d2;";
   infoSection.innerHTML = `<p><strong>Instructions:</strong> Update the description and help text for custom fields. Click "Save Changes" when done.</p>
     <p><strong>Note:</strong> Picklist, lookup, and master-detail fields now have a special update method to avoid metadata errors.</p>`;
   container.appendChild(infoSection);
-
   const statusArea = document.createElement("div");
   statusArea.id = "bulkUpdateStatus";
   statusArea.style.cssText = "margin: 10px 0; padding: 10px; border-radius: 4px; display: none;";
   container.appendChild(statusArea);
-
   const filterSection = document.createElement("div");
   filterSection.style.cssText = "margin: 10px 0; padding: 8px; background-color: #f5f5f5; border-radius: 4px;";
   const filterLabel = document.createElement("label");
   filterLabel.innerHTML = "<strong>Show Fields: </strong>";
   filterSection.appendChild(filterLabel);
-
   const allFilter = document.createElement("label");
   allFilter.style.cssText = "margin-right: 15px; cursor: pointer;";
   allFilter.innerHTML = `<input type="radio" name="fieldFilter" value="all" checked> All`;
   filterSection.appendChild(allFilter);
-
   const standardFilter = document.createElement("label");
   standardFilter.style.cssText = "margin-right: 15px; cursor: pointer;";
   standardFilter.innerHTML = `<input type="radio" name="fieldFilter" value="standard"> Text/Number`;
   filterSection.appendChild(standardFilter);
-
   const picklistFilter = document.createElement("label");
   picklistFilter.style.cssText = "margin-right: 15px; cursor: pointer;";
   picklistFilter.innerHTML = `<input type="radio" name="fieldFilter" value="picklist"> Picklist/Lookup`;
   filterSection.appendChild(picklistFilter);
-
   container.appendChild(filterSection);
-
   const headerRow = document.createElement("div");
   headerRow.style.cssText = "display: grid; grid-template-columns: 35% 32.5% 32.5%; margin-bottom: 10px; font-weight: bold; background-color: #f5f5f5; padding: 8px;";
   const fieldHeader = document.createElement("div");
@@ -746,34 +691,17 @@ function showBulkUpdateModal(fields) {
   headerRow.appendChild(descHeader);
   headerRow.appendChild(helpHeader);
   container.appendChild(headerRow);
-
   const form = document.createElement("div");
   form.style.cssText = "max-height: 400px; overflow-y: auto; border: 1px solid #ccc;";
-
-  // Add CSS for highlighting changed fields
-  if (!document.getElementById("bulkUpdateStyles")) {
-    const style = document.createElement("style");
-    style.id = "bulkUpdateStyles";
-    style.textContent = `
-      .field-changed {
-        background-color: #fff8e1 !important;
-        border: 1px solid #ffd54f !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
   const getFieldCategory = (fieldType) => {
     const type = fieldType.toLowerCase();
     return ['picklist', 'multipicklist', 'lookup', 'reference', 'master-detail', 'hierarchyid'].includes(type) ? 'picklist' : 'standard';
   };
-
   fields.forEach(field => {
     const fieldCategory = getFieldCategory(field.fieldType);
     const fieldContainer = document.createElement("div");
     fieldContainer.dataset.fieldType = fieldCategory;
     fieldContainer.style.cssText = "display: grid; grid-template-columns: 35% 32.5% 32.5%; padding: 8px; border-bottom: 1px solid #eee;";
-
     const fieldInfo = document.createElement("div");
     const specialFieldIndicator = fieldCategory === 'picklist' ? 
       ' <span style="background-color: #fff3cd; color: #856404; font-size: 11px; padding: 2px 4px; border-radius: 3px;">Special&nbsp;Update</span>' : '';
@@ -781,60 +709,33 @@ function showBulkUpdateModal(fields) {
       <span style="font-size: 12px; color: #666;">${field.fieldApiName}</span><br>
       <span style="font-size: 11px; color: #888;">${field.fieldType || ''}</span>`;
     fieldContainer.appendChild(fieldInfo);
-
     const descWrapper = document.createElement("div");
     const descInput = document.createElement("textarea");
     descInput.placeholder = "Description";
     descInput.value = field.currentDescription || "";
-    descInput.dataset.originalValue = field.currentDescription || "";
     descInput.dataset.fieldId = field.fieldId;
     descInput.dataset.fieldType = "description";
     descInput.dataset.apiName = field.fieldApiName;
     descInput.dataset.category = fieldCategory;
     descInput.rows = 2;
     descInput.style.cssText = "width: 95%; resize: vertical;";
-    
-    // Add change detection event
-    descInput.addEventListener('input', function() {
-      if (this.value !== this.dataset.originalValue) {
-        this.classList.add('field-changed');
-      } else {
-        this.classList.remove('field-changed');
-      }
-    });
-    
     descWrapper.appendChild(descInput);
     fieldContainer.appendChild(descWrapper);
-
     const helpWrapper = document.createElement("div");
     const helpInput = document.createElement("textarea");
     helpInput.placeholder = "Help Text";
     helpInput.value = field.currentHelpText || "";
-    helpInput.dataset.originalValue = field.currentHelpText || "";
     helpInput.dataset.fieldId = field.fieldId;
     helpInput.dataset.fieldType = "helpText";
     helpInput.dataset.apiName = field.fieldApiName;
     helpInput.dataset.category = fieldCategory;
     helpInput.rows = 2;
     helpInput.style.cssText = "width: 95%; resize: vertical;";
-    
-    // Add change detection event
-    helpInput.addEventListener('input', function() {
-      if (this.value !== this.dataset.originalValue) {
-        this.classList.add('field-changed');
-      } else {
-        this.classList.remove('field-changed');
-      }
-    });
-    
     helpWrapper.appendChild(helpInput);
     fieldContainer.appendChild(helpWrapper);
-
     form.appendChild(fieldContainer);
   });
-
   container.appendChild(form);
-
   const filterInputs = filterSection.querySelectorAll('input[name="fieldFilter"]');
   filterInputs.forEach(input => {
     input.addEventListener('change', (e) => {
@@ -845,14 +746,11 @@ function showBulkUpdateModal(fields) {
       });
     });
   });
-
   const btnContainer = document.createElement("div");
   btnContainer.style.cssText = "margin-top: 15px; display: flex; justify-content: space-between;";
-
   const infoText = document.createElement("div");
   infoText.innerHTML = `<span style="color: #666; font-size: 12px;">${fields.length} fields available for update</span>`;
   btnContainer.appendChild(infoText);
-
   const actionBtns = document.createElement("div");
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
@@ -865,31 +763,29 @@ function showBulkUpdateModal(fields) {
     statusArea.innerHTML = "Processing updates... This may take a moment.";
     saveBtn.disabled = true;
     saveBtn.innerText = "Saving...";
-
     const inputs = form.querySelectorAll("textarea");
     const updates = {};
     let changeCount = 0;
-
     inputs.forEach(input => {
       const fieldId = input.dataset.fieldId;
       const apiName = input.dataset.apiName;
       if (!updates[fieldId]) updates[fieldId] = {};
-
       if (input.dataset.fieldType === "description") {
-        if (input.value !== input.dataset.originalValue) {
-          updates[fieldId].Description = input.value;
+        updates[fieldId].Description = input.value;
+        const originalField = fields.find(f => f.fieldId === fieldId);
+        if (originalField && input.value !== (originalField.currentDescription || "")) {
           changeCount++;
           console.log(`Field ${apiName} description changed`);
         }
       } else if (input.dataset.fieldType === "helpText") {
-        if (input.value !== input.dataset.originalValue) {
-          updates[fieldId].InlineHelpText = input.value;
+        updates[fieldId].InlineHelpText = input.value;
+        const originalField = fields.find(f => f.fieldId === fieldId);
+        if (originalField && input.value !== (originalField.currentHelpText || "")) {
           changeCount++;
           console.log(`Field ${apiName} help text changed`);
         }
       }
     });
-
     if (changeCount === 0) {
       statusArea.style.backgroundColor = "#fff3cd";
       statusArea.style.color = "#856404";
@@ -898,15 +794,12 @@ function showBulkUpdateModal(fields) {
       saveBtn.innerText = "Save Changes";
       return;
     }
-
     statusArea.innerHTML = `Processing ${changeCount} field updates...`;
     console.log("Sending updates:", updates);
-
     const fieldNameMap = {};
     fields.forEach(field => {
       fieldNameMap[field.fieldId] = `${field.fieldLabel} (${field.fieldApiName})`;
     });
-
     chrome.runtime.sendMessage({ 
       type: "bulkUpdateFields", 
       updates, 
@@ -939,18 +832,15 @@ function showBulkUpdateModal(fields) {
       }
     });
   });
-
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
   cancelBtn.innerText = "Cancel";
   cancelBtn.style.cssText = "padding: 8px 15px; background: #aaa; color: white; border: none; border-radius: 4px; cursor: pointer;";
   cancelBtn.addEventListener("click", () => modal.remove());
-
   actionBtns.appendChild(saveBtn);
   actionBtns.appendChild(cancelBtn);
   btnContainer.appendChild(actionBtns);
   container.appendChild(btnContainer);
-
   modal.appendChild(container);
   document.body.appendChild(modal);
 }
@@ -975,7 +865,6 @@ async function openBulkUpdateModal() {
       alert("Object name not determined.");
       return;
     }
-
     let fieldDescriptions = {};
     try {
       const getDescriptions = async () => {
@@ -984,14 +873,11 @@ async function openBulkUpdateModal() {
           console.log("Failed to get session cookie");
           return;
         }
-
         const apiOrigin = window.location.origin.includes('lightning.force.com') 
           ? window.location.origin.replace('lightning.force.com', 'my.salesforce.com')
           : window.location.origin;
-
         const isCustomObject = objectName.endsWith('__c');
         let url;
-
         if (isCustomObject) {
           let objectId = window.customObjectId;
           if (!objectId) {
@@ -1012,13 +898,11 @@ async function openBulkUpdateModal() {
             `SELECT QualifiedApiName, Description, InlineHelpText FROM FieldDefinition WHERE EntityDefinition.QualifiedApiName = '${objectName}'`
           )}`;
         }
-
         if (url) {
           const response = await fetch(url, {
             method: "GET",
             headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sessionId }
           });
-
           if (response.ok) {
             const data = await response.json();
             if (data.records && data.records.length > 0) {
@@ -1029,11 +913,9 @@ async function openBulkUpdateModal() {
                 } else {
                   fieldApiName = record.QualifiedApiName || record.DeveloperName;
                 }
-
                 const description = (record.Metadata && record.Metadata.description !== undefined)
                   ? record.Metadata.description
                   : (record.Description || '');
-                
                 fieldDescriptions[fieldApiName] = { description, helpText: record.InlineHelpText || '' };
                 console.log(`Set description for ${fieldApiName}: ${description}`);
               });
@@ -1044,39 +926,32 @@ async function openBulkUpdateModal() {
           }
         }
       };
-
       await getDescriptions();
     } catch (error) {
       console.error("Error getting field descriptions:", error);
     }
-
     const response = await new Promise(resolve => {
       chrome.runtime.sendMessage({ type: "fetchObjectDescribe", objectApiName: objectName, origin: window.location.origin }, resolve);
     });
-
     if (response && response.success && response.fields) {
       const customFields = response.fields.filter(field => {
         const fieldType = field.fieldType.toLowerCase();
         return field.fieldApiName.endsWith("__c") && !["formula", "auto number", "rollup summary"].includes(fieldType);
       });
-
       if (customFields.length === 0) {
         hideSpinner();
         alert("No editable custom fields found for this object.");
         return;
       }
-
       const fieldsForModal = [];
       for (const field of customFields) {
         const fieldIdResponse = await new Promise(resolve => {
           chrome.runtime.sendMessage({ type: "getCustomFieldId", objectApiName: objectName, fieldApiName: field.fieldApiName, origin: window.location.origin }, resolve);
         });
-
         if (fieldIdResponse && fieldIdResponse.success) {
           const descRes = await getCustomFieldDescription(field.fieldApiName, objectName, window.customObjectId, window.location.origin);
           const directDescription = descRes.success ? descRes.description : '';
           const directHelpText = descRes.success ? descRes.helpText : '';
-
           fieldsForModal.push({
             fieldId: fieldIdResponse.fieldId,
             fieldLabel: field.fieldLabel,
@@ -1089,7 +964,6 @@ async function openBulkUpdateModal() {
           console.error("Failed to get field Id for " + field.fieldApiName, fieldIdResponse?.error || "Unknown error");
         }
       }
-
       hideSpinner();
       if (fieldsForModal.length > 0) {
         showBulkUpdateModal(fieldsForModal);
@@ -1109,7 +983,6 @@ async function openBulkUpdateModal() {
 
 async function initPicklistProcessing() {
   if (!window.location.pathname.includes("/lightning/setup/")) return;
-
   if (isObjectManagerHomePage()) {
     (async () => {
       try {
@@ -1119,12 +992,10 @@ async function initPicklistProcessing() {
           await autoScrollAndWait(scrollable);
           console.log("Auto scrolling finished for home page.");
         }
-
         const container = await waitForElement(".objectManagerGlobalSearchBox, div[role='search']");
         container.style.cssText = "display: flex; align-items: center; justify-content: flex-end;";
         const input = container.querySelector("input[type='search']");
         if (input) setupCustomQuickFind(input);
-
         if (!document.getElementById("exportSelectionButton")) {
           const selectionButton = document.createElement("button");
           selectionButton.id = "exportSelectionButton";
@@ -1133,7 +1004,6 @@ async function initPicklistProcessing() {
           selectionButton.addEventListener("click", async () => { await showExportSelectionModal(); });
           container.appendChild(selectionButton);
         }
-
         console.log("Home page initialization complete.");
       } catch (error) {
         console.error("Error during home page initialization:", error);
@@ -1141,9 +1011,7 @@ async function initPicklistProcessing() {
     })();
     return;
   }
-
   removeSetupHomeModules();
-
   (async () => {
     const objectName = await getObjectApiNameFromURL();
     if (objectName && lastObjectName && lastObjectName !== objectName) {
@@ -1151,7 +1019,6 @@ async function initPicklistProcessing() {
       if (existing) existing.remove();
     }
     lastObjectName = objectName;
-
     let originalQuickFind;
     try {
       originalQuickFind = await getOriginalQuickFind();
@@ -1159,7 +1026,6 @@ async function initPicklistProcessing() {
     } catch (error) {
       console.warn("Quick Find not found, using fallback on FieldsAndRelationships page.");
     }
-
     try {
       const tableBody = await waitForElement("table tbody");
       const scrollable = findScrollableParent(tableBody);
@@ -1167,7 +1033,6 @@ async function initPicklistProcessing() {
         await autoScrollAndWait(scrollable);
         console.log("Auto scrolling finished on detail page.");
       }
-
       if (originalQuickFind) {
         setupCustomQuickFind(originalQuickFind);
       } else if (window.location.pathname.includes("FieldsAndRelationships")) {
@@ -1181,17 +1046,14 @@ async function initPicklistProcessing() {
           fallbackContainer.appendChild(exportButton);
         }
       }
-
       if (window.location.pathname.includes("FieldsAndRelationships")) {
         addBulkUpdateButton();
       }
-
       processPicklistRows();
       const observer = new MutationObserver(mutations => {
         if (mutations.some(m => m.addedNodes.length)) processPicklistRows();
       });
       observer.observe(tableBody, { childList: true });
-
       console.log("Detail page initialization complete.");
     } catch (error) {
       console.error("Error during detail page initialization:", error);
@@ -1200,14 +1062,12 @@ async function initPicklistProcessing() {
 }
 
 let lastObjectName = null;
-
 window.addEventListener("location-changed", () => {
   console.log("location-changed event detected.");
   lastObjectName = null;
   window.customObjectId = null;
   setTimeout(initPicklistProcessing, 500);
 });
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "location-changed") {
     console.log("Received location-changed from background.");
@@ -1216,35 +1076,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     setTimeout(initPicklistProcessing, 500);
   }
 });
-
 initPicklistProcessing().catch(console.error);
 
 async function getCustomFieldDescription(fieldApiName, objectApiName, objectId, origin, storeId) {
   const sessionId = await getSessionCookie(origin, storeId);
   if (!sessionId) return { success: false, error: "No session cookie found." };
-
   const apiOrigin = getMySalesforceDomain(origin);
   try {
     let developerName = fieldApiName;
     if (fieldApiName.endsWith('__c')) {
       developerName = fieldApiName.slice(0, -3);
     }
-
     const tableEnumOrId = objectId || objectApiName;
     const query = `SELECT Id, DeveloperName, Description, InlineHelpText FROM CustomField WHERE DeveloperName = '${developerName}' AND TableEnumOrId = '${tableEnumOrId}' LIMIT 1`;
     const url = `${apiOrigin}/services/data/v56.0/tooling/query/?q=${encodeURIComponent(query)}`;
-
     console.log(`Querying for description of ${fieldApiName} in ${objectApiName}`);
     const response = await fetch(url, {
       method: "GET",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sessionId }
     });
-
     if (!response.ok) {
       console.error(`API error getting field description: ${response.status} ${response.statusText}`);
       return { success: false, error: `API error: ${response.status} ${response.statusText}` };
     }
-
     const data = await response.json();
     if (data.records && data.records.length > 0) {
       const record = data.records[0];
