@@ -58,6 +58,28 @@ function getMySalesforceDomain(origin) {
     const url = new URL(origin);
     const hostname = url.hostname;
     
+    // First check if this is already a my.salesforce.com domain to avoid duplication
+    if (hostname.includes(".my.salesforce.com")) {
+      console.log("Already a my.salesforce.com domain, returning as is:", origin);
+      return origin;
+    }
+    
+    // Check for sandbox domains that already have "my" to avoid duplication
+    if (hostname.includes("sandbox.my.")) {
+      console.log("Already a sandbox.my domain, handling specially to avoid duplication:", origin);
+      // If it's also a salesforce-setup.com domain, handle the replacement carefully
+      if (hostname.includes("salesforce-setup.com")) {
+        const parts = hostname.split(".");
+        const sandboxIndex = parts.indexOf("sandbox");
+        // Make sure we don't add another "my" after "sandbox"
+        if (sandboxIndex >= 0 && parts[sandboxIndex + 1] === "my") {
+          const newHostname = hostname.replace("salesforce-setup.com", "salesforce.com");
+          return origin.replace(hostname, newHostname);
+        }
+      }
+      return origin;
+    }
+    
     // Check if this is a sandbox URL (contains -- pattern)
     const sandboxMatch = hostname.match(/([^-]+)--([^.]+)\.(.*)/);
     
@@ -71,6 +93,10 @@ function getMySalesforceDomain(origin) {
         const newDomain = `${url.protocol}//${orgName}--${sandboxName}.my.salesforce.com`;
         console.log("Sandbox converted to:", newDomain);
         return newDomain;
+      } else if (restOfDomain.includes("sandbox")) {
+        // Already a sandbox domain, be careful with transformation
+        console.log("Already a sandbox domain, handling with care:", origin);
+        return origin;
       }
     }
     
